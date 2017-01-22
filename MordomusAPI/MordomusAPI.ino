@@ -8,7 +8,7 @@
 const char* host = "MordomusServer";
 const char* ssid = "MEO-AADB7D";
 const char* password = "49809012A8";
-const byte DeviceId = 1;
+
 
 const byte preamble=0xAA;
 const byte oncmd=0x64;
