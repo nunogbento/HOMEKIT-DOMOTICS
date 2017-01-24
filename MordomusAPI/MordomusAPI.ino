@@ -29,8 +29,10 @@ void returnFail(String msg) {
 
 bool loadSPIFFS(String path){
   String dataType = "text/plain";  
-  if(path.endsWith(".src")) path = path.substring(0, path.lastIndexOf("."));
-  else if(path.endsWith(".html")) dataType = "text/html";
+  if(path=="/")
+    path="/index.html";
+  
+  if(path.endsWith(".html")) dataType = "text/html";
   else if(path.endsWith(".css")) dataType = "text/css";
   else if(path.endsWith(".js")) dataType = "application/javascript";
   else if(path.endsWith(".png")) dataType = "image/png";
@@ -74,9 +76,9 @@ void handleTurnOutputOn(){
  byte address=(byte)webSrv.arg("address").toInt();
  
  Serial.write(preamble);
- delay(1);
+ delay(2);
  Serial.write(address);
- delay(1);
+ delay(2);
  Serial.write(oncmd);
  webSrv.send(200, "text/plain", "");
 }
@@ -86,9 +88,9 @@ void handleTurnOutputOff(){
  byte address=(byte)webSrv.arg("address").toInt();
  
  Serial.write(preamble); 
- delay(1);
+ delay(2);
  Serial.write(address) ;
- delay(1);
+ delay(2);
  Serial.write(offcmd) ;
  webSrv.send(200, "text/plain", "");
 }
