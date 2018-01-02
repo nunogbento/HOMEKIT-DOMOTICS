@@ -1,0 +1,93 @@
+{
+    "bridge": {
+        "name": "Homebridge",
+        "username": "CC:22:3D:E3:CE:30",
+        "port": 51826,
+        "pin": "031-45-154"
+    },
+    
+    "description": "This is an example configuration file with one fake accessory and one fake platform. You can use this as a template for creating your own configuration file containing devices you actually own.",
+
+    "accessories": [
+	 {
+        "accessory": "HTTP-RGB",
+        "name": "Kitchen Lamp",
+
+        "switch": {
+            
+            "powerOn": "http://mordomusserver.local/turnon?address=173",
+            "powerOff": "http://mordomusserver.local/turnoff?address=173"
+        }
+    } ,
+	     {
+        "accessory": "HTTP-RGB",
+        "name": "Living Room Lamp",
+
+        "switch": {
+            
+            "powerOn": "http://mordomusserver.local/turnon?address=172",
+            "powerOff": "http://mordomusserver.local/turnoff?address=172"
+        }
+    },
+	     {
+        "accessory": "HTTP-RGB",
+        "name": "Hallway Lamp",
+
+        "switch": {            
+            "powerOn": "http://mordomusserver.local/turnon?address=167",
+            "powerOff": "http://mordomusserver.local/turnoff?address=167"
+        }
+    } ,
+	
+	     {
+        "accessory": "HTTP-RGB",
+        "name": "Master Bedroom Lamp",
+
+        "switch": {            
+            "powerOn": "http://mordomusserver.local/turnon?address=170",
+            "powerOff": "http://mordomusserver.local/turnoff?address=170"
+        }
+    }  ,
+	
+	     {
+        "accessory": "HTTP-RGB",
+        "name": "Master WC Bedroom Lamp",
+
+        "switch": {            
+            "powerOn": "http://mordomusserver.local/turnon?address=174",
+            "powerOff": "http://mordomusserver.local/turnoff?address=174"
+        }
+    }  ,
+	
+	     {
+        "accessory": "HTTP-RGB",
+        "name": "Pool Bedroom Lamp",
+
+        "switch": {            
+            "powerOn": "http://mordomusserver.local/turnon?address=169",
+            "powerOff": "http://mordomusserver.local/turnoff?address=169"
+        }
+    }  ,
+	
+	     {
+        "accessory": "HTTP-RGB",
+        "name": "Street Bedroom Lamp",
+
+        "switch": {            
+            "powerOn": "http://mordomusserver.local/turnon?address=171",
+            "powerOff": "http://mordomusserver.local/turnoff?address=171"
+        }
+    }  ,
+	
+	     {
+        "accessory": "HTTP-RGB",
+        "name": "WC Lamp",
+
+        "switch": {            
+            "powerOn": "http://mordomusserver.local/turnon?address=168",
+            "powerOff": "http://mordomusserver.local/turnoff?address=168"
+        }
+    } 
+    ]
+    
+}

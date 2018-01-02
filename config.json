@@ -1,0 +1,148 @@
+{
+	"bridge": {
+		"name": "Homebridge2",
+		"username": "CC:22:3D:E3:CE:30",
+		"port": 51876,
+		"pin": "045-45-154",		
+		"model": "Raspbery Pi Mordomus Bridge",
+		"serialNumber": "0.0.01"
+	},
+	"description": "Est. Buraca 15 BL.C 2A Lisboa Configuration",
+	"accessories": [{
+		"accessory": "HTTP-RGB",
+		"name": "Kitchen Lamp",
+		"switch": {
+			"status": "http://localhost:3000/status?address=173",
+			"powerOn": "http://localhost:3000/turnon?address=173",
+			"powerOff": "http://localhost:3000/turnoff?address=173"
+		}
+	},
+	{
+		"accessory": "HTTP-RGB",
+		"name": "Living Room Lamp",
+		"switch": {
+			"status": "http://localhost:3000/status?address=172",
+			"powerOn": "http://localhost:3000/turnon?address=172",
+			"powerOff": "http://localhost:3000/turnoff?address=172"
+		}
+	},
+	{
+		"accessory": "HTTP-RGB",
+		"name": "Hallway Lamp",
+		"switch": {
+			"status": "http://localhost:3000/status?address=167",
+			"powerOn": "http://localhost:3000/turnon?address=167",
+			"powerOff": "http://localhost:3000/turnoff?address=167"
+		}
+	},
+	{
+		"accessory": "HTTP-RGB",
+		"name": "Master Bedroom Lamp",
+		"switch": {
+			"status": "http://localhost:3000/status?address=170",
+			"powerOn": "http://localhost:3000/turnon?address=170",
+			"powerOff": "http://localhost:3000/turnoff?address=170"
+		}
+	},
+	{
+		"accessory": "HTTP-RGB",
+		"name": "Master Bedroom WC Lamp",
+		"switch": {
+			"status": "http://localhost:3000/status?address=174",
+			"powerOn": "http://localhost:3000/turnon?address=174",
+			"powerOff": "http://localhost:3000/turnoff?address=174"
+		}
+	},
+	{
+		"accessory": "HTTP-RGB",
+		"name": "Pool Side Bedroom Lamp",
+		"switch": {
+			"status": "http://localhost:3000/status?address=169",
+			"powerOn": "http://localhost:3000/turnon?address=169",
+			"powerOff": "http://localhost:3000/turnoff?address=169"
+		}
+	},
+	{
+		"accessory": "HTTP-RGB",
+		"name": "Street Bedroom Lamp",
+		"switch": {
+			"status": "http://localhost:3000/status?address=171",
+			"powerOn": "http://localhost:3000/turnon?address=171",
+			"powerOff": "http://localhost:3000/turnoff?address=171"
+		}
+	},
+	{
+		"accessory": "HTTP-RGB",
+		"name": "aquarium Lamp",
+		"switch": {
+			"status": "http://192.168.1.72/control?cmd=status,gpio,12",
+			"powerOn": "http://192.168.1.72/control?cmd=event,PowerOn",
+			"powerOff": "http://192.168.1.72/control?cmd=event,PowerOff"
+		}
+	},
+	{
+		"accessory": "HTTP-RGB",
+		"name": "WC Lamp",
+		"switch": {
+			"status": "http://localhost:3000/status?address=168",
+			"powerOn": "http://localhost:3000/turnon?address=168",
+			"powerOff": "http://localhost:3000/turnoff?address=168"
+		}
+	},
+	{
+       "accessory": "MagicHome",
+       "name": "Pool Side LED Strip",
+       "ip": "192.168.1.107",
+       "setup": "RGBW",
+       "purewhite": false
+   },
+   {
+       "accessory": "MagicHome",
+       "name": "Street Side LED Strip",
+       "ip": "192.168.1.94",
+       "setup": "RGBW",
+       "purewhite": false
+   }],
+	"platforms": [
+	{
+      "platform": "Hue",
+      "users": {
+        "001788FFFE2A641A": "GirwW3ZgibL8qfFFY3HOAP3Gop45t2HxlezLla6K"        
+      },
+      "lights": true,
+	  "sensors":true,
+	  "excludeSensorTypes": ["CLIP"]
+    },
+	{
+	  "platform": "Camera-IP",
+	  "cameras": [
+		{
+		  "name": "Halway",
+		  "videoConfig": {
+			"source": "-re -i rtsp://admin:owel(00)@192.168.1.75:554/onvif2",			
+			"maxStreams": 2,
+			"maxWidth": 1280,
+			"maxHeight": 960,
+			"maxFPS": 30
+		  }},
+		  {
+		  "name": "Bia",
+		  "videoConfig": {
+			"source": "-re -i rtsp://admin:owel(00)@192.168.1.104:554/onvif1",			
+			"maxStreams": 2,
+			"maxWidth": 1280,
+			"maxHeight": 960,
+			"maxFPS": 30
+		  }
+		}
+	  ]
+	},
+	{
+	  "platform": "mqtt",
+	  "name": "mqtt",
+	  "url": "mqtt://127.0.0.1",
+	  "topic_type": "multiple",
+	  "topic_prefix": "homebridge"
+	}
+	]
+}

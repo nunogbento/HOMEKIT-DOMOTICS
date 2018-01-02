@@ -1,0 +1,59 @@
+{
+  "_from": "homebridge-mqtt",
+  "_id": "homebridge-mqtt@0.4.5",
+  "_inBundle": false,
+  "_integrity": "sha1-32n/FbJ9l06SwvYbVszyREeKSBE=",
+  "_location": "/homebridge-mqtt",
+  "_phantomChildren": {},
+  "_requested": {
+    "type": "tag",
+    "registry": true,
+    "raw": "homebridge-mqtt",
+    "name": "homebridge-mqtt",
+    "escapedName": "homebridge-mqtt",
+    "rawSpec": "",
+    "saveSpec": null,
+    "fetchSpec": "latest"
+  },
+  "_requiredBy": [
+    "#USER",
+    "/"
+  ],
+  "_resolved": "https://registry.npmjs.org/homebridge-mqtt/-/homebridge-mqtt-0.4.5.tgz",
+  "_shasum": "df69ff15b27d974e92c2f61b56ccf244478a4811",
+  "_spec": "homebridge-mqtt",
+  "_where": "/opt/node/lib/node_modules/homebridge",
+  "author": {
+    "name": "flurin"
+  },
+  "bugs": {
+    "url": "http://github.com/cflurin/homebridge-mqtt/issues"
+  },
+  "bundleDependencies": false,
+  "dependencies": {
+    "mqtt": ">=2.4.0",
+    "request": ">=2.79.0"
+  },
+  "deprecated": false,
+  "description": "MQTT Plugin for Homebridge",
+  "engines": {
+    "homebridge": ">=0.4.16",
+    "node": ">=4.3.2"
+  },
+  "homepage": "https://github.com/cflurin/homebridge-mqtt#readme",
+  "keywords": [
+    "homebridge",
+    "homebridge-plugin",
+    "homekit",
+    "siri",
+    "mqtt",
+    "node-RED"
+  ],
+  "license": "ISC",
+  "name": "homebridge-mqtt",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cflurin/homebridge-mqtt.git"
+  },
+  "version": "0.4.5"
+}

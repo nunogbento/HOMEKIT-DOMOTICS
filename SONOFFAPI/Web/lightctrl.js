@@ -1,32 +1,25 @@
 'use strict';
 
-angular.module('MORDOMUSSERVER.LightCtrl', ['toggle-switch'])
+angular.module('SONOFFSERVER.LightCtrl', ['toggle-switch'])
     .controller('LightController', function ($scope, $http) {
         // Initialize the model
-        $http.get('./layout.json')
-            .then(function (res) {
-                $scope.Lights = new Array();
-
-                for (var i = 0; i < res.data.length; i++) {
-
-                    $scope.Lights[i] = {
-                        Address: res.data[i].A,
-                        Name: res.data[i].N,
-                        Value: false,
-                        onChange: function () {
-                            $http({
-                                method: "get",
-                                url: this.Value == 0 ? "http://192.168.1.109:3000/turnoff?address="+this.Address : "http://local:3000/turnon?address="+this.Address,
-                                headers: {
-                                    'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'
-                                }
-                            });
-                        },
-                    };
-                };
-            }
-
-        );
+       
+		$scope.Lights = new Array();
+		$scope.Lights[0] = {
+			Address: 12,
+			Name: 'Power',
+			Value: false,
+			onChange: function () {
+				$http({
+					method: "get",
+					url: this.Value == 0 ? "/turnoff?address="+this.Address : "/turnon?address="+this.Address,
+					headers: {
+						'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'
+					}
+				});
+			},
+		};
+		
     }).factory(
         "transformRequestAsFormPost",
         function () {

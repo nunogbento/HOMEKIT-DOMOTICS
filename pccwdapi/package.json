@@ -1,0 +1,24 @@
+{
+    "name": "pccwd-api",
+    "version": "1.0.0",
+    "description": "Mordomus PCCWD Lights On Node.js API server",
+    "author": "Nuno Bento",
+    "license": "MIT",
+    "keywords": [
+        "API",
+        "MORDOMUS-PCCWD"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git://https://github.com/nunogbento/HOMEKIT-DOMOTICS.git"
+    },
+    "bugs": {
+        "url": "https://github.com/nunogbento/HOMEKIT-DOMOTICS/issues"
+    },
+    "dependencies": {
+        "serialport": "^6.0.4",
+         "express":"^4.16.2",
+		 "body-parser":"^1.16.0",
+		 "mqtt":"^2.15.0"
+    }
+}

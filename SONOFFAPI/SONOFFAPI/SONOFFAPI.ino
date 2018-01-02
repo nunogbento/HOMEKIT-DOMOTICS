@@ -5,18 +5,24 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 
-const char* host = "MordomusServer";
+const char* host = "SONOFFServer";
 const char* ssid = "MEO-AADB7D";
 const char* password = "49809012A8";
 
-
-const byte preamble=0xAA;
-const byte oncmd=0x64;
-const byte offcmd=0x01;
-
+const byte relayPin = 12;
+const byte LedPin = 13;
 ESP8266WebServer webSrv(80);
 FtpServer ftpSrv;   
 
+// Variables will change :
+int ledState = LOW;             // ledState used to set the LED
+
+// Generally, you should use "unsigned long" for variables that hold time
+// The value will quickly become too large for an int to store
+unsigned long previousMillis = 0;        // will store last time LED was updated
+
+// constants won't change :
+const long interval = 1000;           // interval at which to blink (milliseconds)
 
 
 void returnOK() {
@@ -73,39 +79,42 @@ void handleNotFound(){
 
 void handleTurnOutputOn(){
  if(webSrv.args() != 1) return webSrv.send(500, "text/plain", "BAD ARGS");  
- byte address=(byte)webSrv.arg("address").toInt();
- 
- Serial.write(preamble);
- delay(2);
- Serial.write(address);
- delay(2);
- Serial.write(oncmd);
+ //byte address=(byte)webSrv.arg("address").toInt();
+ digitalWrite(relayPin, HIGH);       
  webSrv.send(200, "text/plain", "");
 }
 
 void handleTurnOutputOff(){
  if(webSrv.args() != 1) return webSrv.send(500, "text/plain", "BAD ARGS");  
- byte address=(byte)webSrv.arg("address").toInt();
  
- Serial.write(preamble); 
- delay(2);
- Serial.write(address) ;
- delay(2);
- Serial.write(offcmd) ;
+ //byte address=(byte)webSrv.arg("address").toInt();
+
+ digitalWrite(relayPin, LOW);      
  webSrv.send(200, "text/plain", "");
 }
 
 
 
+void handleStatus(){
+ byte status=digitalRead(relayPin);
+ webSrv.send(200, "text/plain", status?"1":"0");
+}
+
 
 void setup() {
-  Serial.begin(14400);  
+  Serial.begin(115200);
+  delay(10);
+  Serial.println("SONOFF Starting");
   WiFi.begin(ssid, password);
- 
+  pinMode(relayPin, OUTPUT);
+  pinMode(LedPin, OUTPUT);
+  digitalWrite(LedPin, HIGH);     
+  digitalWrite(relayPin, LOW);     
   // Wait for connection
   uint8_t i = 0;
   while (WiFi.status() != WL_CONNECTED && i++ < 20) {//wait 10 seconds   
-    delay(2000);
+    Serial.print ( "." );
+    delay(500);
   }
   
   if(i == 21){
@@ -123,11 +132,19 @@ void setup() {
   webSrv.on("/turnoutputon", HTTP_POST, handleTurnOutputOn);
   webSrv.on("/turnoutputoff", HTTP_POST, handleTurnOutputOff);
   webSrv.on("/turnon", HTTP_GET, handleTurnOutputOn);
+  webSrv.on("/status", HTTP_GET, handleStatus);
   webSrv.on("/turnoff", HTTP_GET, handleTurnOutputOff);
   webSrv.onNotFound(handleNotFound);
   //Http Server Start
   webSrv.begin();
-  
+
+  Serial.println();
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+   // Print the IP address
+  Serial.println(WiFi.localIP());
+  digitalWrite(LedPin, LOW);     
  
 }
 
@@ -135,5 +152,26 @@ void setup() {
 void loop() {
     ftpSrv.handleFTP();       
     webSrv.handleClient();    
+    // check to see if it's time to blink the LED; that is, if the
+  // difference between the current time and last time you blinked
+  // the LED is bigger than the interval at which you want to
+  // blink the LED.
+  
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - previousMillis >= interval) {
+    // save the last time you blinked the LED
+    previousMillis = currentMillis;
+
+    // if the LED is off turn it on and vice-versa:
+    if (ledState == LOW) {
+      ledState = HIGH;
+    } else {
+      ledState = LOW;
+    }
+
+    // set the LED with the ledState of the variable:
+    digitalWrite(LedPin, ledState);
+  }
 }
 

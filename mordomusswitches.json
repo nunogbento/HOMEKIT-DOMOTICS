@@ -1,0 +1,51 @@
+[{
+    "name": "Living Room Wall Switch",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "name": "Kitchen Wall Switch",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "name": "Hallway Wall Switch 1",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "name": "Hallway Wall Switch 2",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "name": "Hallway Wall Switch 3",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "name": "Master Wall Switch",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "name": "Pool Side Wall Switch",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "name": "Street Side Wall Switch",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "name": "Master WC Wall Switch",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "name": "WC Wall Switch",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+}
+]
