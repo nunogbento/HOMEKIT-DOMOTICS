@@ -1,17 +1,13 @@
 
 // Includes //
 
-#include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
-#include <ESP8266mDNS.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 #include <PubSubClient.h>
-//needed for library
-
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
@@ -141,22 +137,6 @@ void setup() {
   client.setServer(mqtt_server, 1883);
 
 }
-/*
-  void wifi_conn() {
-  Serial.print("Connecting to ");
-  Serial.print(ssid);
-  Serial.println();
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println();
-  Serial.println("WiFi connected");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-  }*/
 
 void loop() {
   ArduinoOTA.handle();
