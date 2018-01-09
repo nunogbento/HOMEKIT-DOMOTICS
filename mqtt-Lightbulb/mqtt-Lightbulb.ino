@@ -1,5 +1,6 @@
 
 // Includes //
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
@@ -8,8 +9,12 @@
 #include <ArduinoOTA.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
-
 #include <PubSubClient.h>
+//needed for library
+
+#include <DNSServer.h>
+#include <ESP8266WebServer.h>
+#include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
 
 //Led supports RGB
 #define IsRGB false
@@ -21,11 +26,7 @@
 #define GREEN_LedPin 15
 #define BLUE_LedPin 15
 
-const char* ssid = "MEO-AADB7D";
-const char* password = "49809012A8";
 const char* mqtt_server = "192.168.1.109";
-
-
 uint16_t i;
 char serviceType[256] = "Lightbulb";
 
@@ -81,6 +82,7 @@ PubSubClient client(wclient);
 void setup() {
   Serial.begin(74880);
   chipId = String(serviceType) + String(ESP.getChipId());
+
   if (IsWHITE) {
     pinMode(WHITE_LedPin, OUTPUT);
   }
@@ -105,7 +107,14 @@ void setup() {
   jsonReachability.printTo(jsonReachabilityString);
 
 
-  wifi_conn();
+  //wifi_conn();
+  //WiFiManager
+  //Local intialization. Once its business is done, there is no need to keep it around
+  WiFiManager wifiManager;
+  //reset saved settings
+  //wifiManager.resetSettings();
+  wifiManager.autoConnect(chipId.c_str());
+
   ArduinoOTA.setPort(8266);
   ArduinoOTA.setHostname(chipId.c_str());
   // No authentication by default
@@ -132,8 +141,8 @@ void setup() {
   client.setServer(mqtt_server, 1883);
 
 }
-
-void wifi_conn() {
+/*
+  void wifi_conn() {
   Serial.print("Connecting to ");
   Serial.print(ssid);
   Serial.println();
@@ -147,7 +156,7 @@ void wifi_conn() {
   Serial.println("WiFi connected");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
-}
+  }*/
 
 void loop() {
   ArduinoOTA.handle();
@@ -171,17 +180,17 @@ void loop() {
     if (client.connected())
       client.loop();
   } else {
-    wifi_conn();
+    ESP.reset();
   }
 
   if (startFade) {
     startFade = false;
-    if (IsWHITE )     
-        realWhite =(lightBulbOn)?  map(lightBrightness, 0, 100, 0, 255):0;
-    Serial.println(String(lightBulbOn)+String(" --> rw=")+String(realWhite));
+    if (IsWHITE )
+      realWhite = (lightBulbOn) ?  map(lightBrightness, 0, 100, 0, 255) : 0;
+    Serial.println(String(lightBulbOn) + String(" --> rw=") + String(realWhite));
     //if(IsRGB)
-      //todo map HSL to RGB
-    
+    //todo map HSL to RGB
+
     // If we don't want to fade, skip it.
     if (transitionTime == 0) {
       setColor(realRed, realGreen, realBlue, realWhite);
@@ -194,7 +203,7 @@ void loop() {
         grnVal = realGreen;
         bluVal = realBlue;
       }
-    }   
+    }
     else {
       loopCount = 0;
       if (IsWHITE) {
@@ -276,9 +285,9 @@ void setAccessory() {
   Serial.print(accessoryCharacteristic);
   Serial.print(" to ");
   Serial.println(accessoryValue);
-  
+
   if (accessoryCharacteristic == std::string("On")) {
-    lightBulbOn = (accessoryValue==std::string("true"));
+    lightBulbOn = (accessoryValue == std::string("true"));
   }
   else if (accessoryCharacteristic == std::string("Brightness")) {
     lightBrightness = atoi(accessoryValue);
