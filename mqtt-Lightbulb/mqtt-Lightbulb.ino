@@ -11,13 +11,17 @@
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
+#include "AM2320.h"
+
+// create a variable of sensor library
+AM2320 sensor;
 
 //Led supports RGB
 #define IsRGB false
 //led is only white
 #define IsWHITE true
 
-#define WHITE_LedPin 2
+#define WHITE_LedPin D8
 #define RED_LedPin 15
 #define GREEN_LedPin 15
 #define BLUE_LedPin 15
@@ -41,11 +45,6 @@ const char* servicetopic = "homebridge/to/add/service";
 const char* reachabilitytopic = "homebridge/to/set/reachability";
 
 const char* maintmessage = "";
-const char* accessoryName;
-const char* accessoryCharacteristic;
-const char* accessoryServiceName;
-const char* accessoryValue;
-const char* accessoryValueString;
 
 bool lightBulbOn;
 u_int lightBrightness;
@@ -55,6 +54,8 @@ u_int lightSaturation;
 String chipId;
 String jsonReachabilityString;
 
+float measuredTemperature = 0;
+float measuredHumidity = 0;
 
 // RealPWM values to write to the LEDs (ex. including brightness and state)
 byte realRed = 0;
@@ -70,6 +71,10 @@ bool inFade = false;
 int loopCount = 0;
 int stepR, stepG, stepB, stepW;
 int redVal, grnVal, bluVal, whtVal;
+
+const unsigned long MeasureInterval = 2 * 60 * 1000UL;
+static unsigned long lastSampleTime = 0 - MeasureInterval;  // initialize such that a reading is due the first time through loop()
+
 
 
 WiFiClient wclient;
@@ -89,6 +94,8 @@ void setup() {
   }
 
   analogWriteRange(255);
+
+  sensor.begin();
 
   lightBulbOn = true;
   lightBrightness = 255;
@@ -163,10 +170,39 @@ void loop() {
     ESP.reset();
   }
 
+  unsigned long now = millis();
+  if (now - lastSampleTime >= MeasureInterval)
+  {
+    lastSampleTime += MeasureInterval;
+    // sensor.measure() returns boolean value
+    // - true indicates measurement is completed and success
+    // - false indicates that either sensor is not ready or crc validation failed
+    //   use getErrorCode() to check for cause of error.
+    if (sensor.measure()) {
+      Serial.print("Temperature: ");
+      measuredTemperature = sensor.getTemperature();      
+      getAccessory("Temperature Sensor","CurrentTemperature");
+      Serial.println(measuredTemperature);
+      Serial.print("Humidity: ");
+      measuredHumidity = sensor.getHumidity();
+      getAccessory("Humidity Sensor","CurrentRelativeHumidity");
+      Serial.println(measuredHumidity);
+    }
+    else {  // error has occured
+      int errorCode = sensor.getErrorCode();
+      switch (errorCode) {
+        case 1: Serial.println("ERR: Sensor is offline"); break;
+        case 2: Serial.println("ERR: CRC validation failed."); break;
+      }
+    }
+  }
+
+
+
   if (startFade) {
     startFade = false;
     if (IsWHITE )
-      realWhite = (lightBulbOn) ?  map(lightBrightness, 0, 100, 0, 255) : 0;
+      realWhite = (lightBulbOn) ?  map(lightBrightness, 0, 100, 255, 0) : 255;
     Serial.println(String(lightBulbOn) + String(" --> rw=") + String(realWhite));
     //if(IsRGB)
     //todo map HSL to RGB
@@ -230,6 +266,7 @@ void addAccessory() {
   JsonObject& addLightbulbAccessoryJson = jsonLightbulbBuffer.createObject();
   addLightbulbAccessoryJson["name"] = chipId.c_str();
   addLightbulbAccessoryJson["service"] = serviceType;
+  addLightbulbAccessoryJson["service_name"] = "Lightbulb";
   addLightbulbAccessoryJson["Brightness"] = lightBrightness;
   if (IsRGB) {
     addLightbulbAccessoryJson["Hue"] = lightHue;
@@ -240,7 +277,29 @@ void addAccessory() {
   addLightbulbAccessoryJson.printTo(addLightbulbAccessoryJsonString);
   Serial.println(addLightbulbAccessoryJsonString.c_str());
   if (client.publish(addtopic, addLightbulbAccessoryJsonString.c_str()))
-    Serial.println("Lightbulb Added");
+    Serial.println("Lightbulb Service Added");
+
+  //{"name": "Master Sensor", "service_name": "humidity", "service": "HumiditySensor"}
+  JsonObject& addHumidityServiceJson = jsonLightbulbBuffer.createObject();
+  addHumidityServiceJson["name"] = chipId.c_str();
+  addHumidityServiceJson["service_name"] = "Humidity Sensor";
+  addHumidityServiceJson["service"] = "HumiditySensor";
+  String addHumidityJsonString;
+  addHumidityServiceJson.printTo(addHumidityJsonString);
+  Serial.println(addHumidityJsonString.c_str());
+  if (client.publish(servicetopic, addHumidityJsonString.c_str()))
+    Serial.println("Humidity Service Added");
+
+  //{"name": "Master Sensor", "service_name": "temperature", "service": "TemperatureSensor"}
+  JsonObject& addTemperatureServiceJson = jsonLightbulbBuffer.createObject();
+  addTemperatureServiceJson["name"] = chipId.c_str();
+  addTemperatureServiceJson["service_name"] = "Temperature Sensor";
+  addTemperatureServiceJson["service"] = "TemperatureSensor";
+  String addTemperatureJsonString;
+  addTemperatureServiceJson.printTo(addTemperatureJsonString);
+  Serial.println(addTemperatureJsonString.c_str());
+  if (client.publish(servicetopic, addTemperatureJsonString.c_str()))
+    Serial.println("Temperature Service Added");
 }
 
 void maintAccessory() {
@@ -260,8 +319,8 @@ void setReachability() {
 
 
 
-void setAccessory() {
-  Serial.print("Set Lightbulb ");
+void setAccessory(const char * accessoryCharacteristic,const char *accessoryValue) {
+  Serial.print("Set -> ");
   Serial.print(accessoryCharacteristic);
   Serial.print(" to ");
   Serial.println(accessoryValue);
@@ -283,32 +342,39 @@ void setAccessory() {
   inFade = false; // Kill the current fade
 }
 
-void getAccessory() {
-  Serial.print("Get Lightbulb ");
+void getAccessory(const char * accessoryServiceName,const char * accessoryCharacteristic) {
+  Serial.print("Get -> ");
   Serial.print(accessoryCharacteristic);
   Serial.print(": ");
   //{"name":"{{payload.Id}}","service_name": "PB","characteristic":"ProgrammableSwitchEvent","value":{{payload.Count}}}
   StaticJsonBuffer<200> jsonLightbulbBuffer;
   JsonObject& Json = jsonLightbulbBuffer.createObject();
   Json["name"] = chipId.c_str();
-  Json["service_name"] = chipId.c_str();
+  Json["service_name"] = accessoryServiceName;
   Json["characteristic"] = accessoryCharacteristic;
   if (accessoryCharacteristic == std::string("On")) {
-    Json["value"] = lightBulbOn;
+    Json["value"] = lightBulbOn;   
     Serial.println(lightBulbOn);
   }
   else if (accessoryCharacteristic == std::string("Brightness")) {
-    Json["value"] = lightBrightness;
+    Json["value"] = lightBrightness;  
     Serial.println(lightBrightness);
-
   }
   else if (accessoryCharacteristic == std::string("Hue")) {
-    Json["value"] = lightHue;
+    Json["value"] = lightHue;   
     Serial.println(lightHue);
   }
   else if (accessoryCharacteristic == std::string("Saturation")) {
-    Json["value"] = lightSaturation;
+    Json["value"] = lightSaturation;    
     Serial.println(lightSaturation);
+  }else if (accessoryCharacteristic == std::string("CurrentTemperature")) {
+    Json["value"] = measuredTemperature;    
+    Serial.println(measuredTemperature);
+  }
+  else if (accessoryCharacteristic == std::string("CurrentRelativeHumidity")) {
+    Json["value"] = measuredHumidity;
+    
+    Serial.println(measuredHumidity);
   }
   String UpdateJson;
   Json.printTo(UpdateJson);
@@ -329,27 +395,25 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   StaticJsonBuffer<512> jsoncallbackBuffer;
   JsonObject& mqttAccessory = jsoncallbackBuffer.parseObject(message);
-  accessoryName = mqttAccessory["name"];
-  accessoryServiceName = mqttAccessory["service_name"];
-
-  // Serial.println((char*)payload);
+  
+  const char* accessoryName = mqttAccessory["name"];
+  const char* accessoryServiceName = mqttAccessory["service_name"];
 
   if (mainttopic == std::string(topic)) {
     Serial.print("Maintenance");
     maintAccessory();
   }
   else if (intopic == std::string(topic)) {
-
     if (String(accessoryName) == chipId) {
-      accessoryCharacteristic = mqttAccessory["characteristic"];
-      accessoryValue = mqttAccessory["value"];
-      setAccessory();
+      const char* accessoryCharacteristic = mqttAccessory["characteristic"];
+      const char* accessoryValue = mqttAccessory["value"];
+      setAccessory(accessoryCharacteristic,accessoryValue);
     }
   }
   else if (gettopic == std::string(topic)) {
     if (String(accessoryName) == chipId) {
-      accessoryCharacteristic = mqttAccessory["characteristic"];
-      getAccessory();
+      const char* accessoryCharacteristic = mqttAccessory["characteristic"];
+      getAccessory(accessoryServiceName,accessoryCharacteristic);
     }
   }
 
