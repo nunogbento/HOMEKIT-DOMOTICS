@@ -26,6 +26,11 @@ AM2320 sensor;
 #define GREEN_LedPin 15
 #define BLUE_LedPin 15
 
+
+#define MOTION_INPUT_PIN_1 D7
+#define MOTION_INPUT_PIN_2 D6
+#define MOTION_SAMPLES 5
+
 const char* mqtt_server = "192.168.1.109";
 uint16_t i;
 char serviceType[256] = "Lightbulb";
@@ -72,10 +77,22 @@ int loopCount = 0;
 int stepR, stepG, stepB, stepW;
 int redVal, grnVal, bluVal, whtVal;
 
+//temp and humidity pooling variables
 const unsigned long MeasureInterval = 2 * 60 * 1000UL;
 static unsigned long lastSampleTime = 0 - MeasureInterval;  // initialize such that a reading is due the first time through loop()
 
 
+
+//motion stector stuff
+const unsigned long MotionCheckInterval =  100UL;
+
+
+static unsigned long lastMotionCheckTime = 0 - MotionCheckInterval;
+static bool MotionDetected = 0;
+static bool MotionDetectedSample = 0;
+static bool MotionDetectedPreviousSample = 0;
+static int MotionDetectedAlignedSamples = 0;
+static bool LastReportedMotionDetected = 0;
 
 WiFiClient wclient;
 PubSubClient client(wclient);
@@ -92,6 +109,9 @@ void setup() {
     pinMode(GREEN_LedPin, OUTPUT);
     pinMode(BLUE_LedPin, OUTPUT);
   }
+
+  pinMode(MOTION_INPUT_PIN_1, INPUT);
+  pinMode(MOTION_INPUT_PIN_2, INPUT);
 
   analogWriteRange(255);
 
@@ -180,12 +200,12 @@ void loop() {
     //   use getErrorCode() to check for cause of error.
     if (sensor.measure()) {
       Serial.print("Temperature: ");
-      measuredTemperature = sensor.getTemperature();      
-      getAccessory("Temperature Sensor","CurrentTemperature");
+      measuredTemperature = sensor.getTemperature();
+      getAccessory("Temperature Sensor", "CurrentTemperature");
       Serial.println(measuredTemperature);
       Serial.print("Humidity: ");
       measuredHumidity = sensor.getHumidity();
-      getAccessory("Humidity Sensor","CurrentRelativeHumidity");
+      getAccessory("Humidity Sensor", "CurrentRelativeHumidity");
       Serial.println(measuredHumidity);
     }
     else {  // error has occured
@@ -197,7 +217,36 @@ void loop() {
     }
   }
 
+  if (now - lastMotionCheckTime >= MotionCheckInterval)
+  {
+    lastMotionCheckTime += MotionCheckInterval;
+    MotionDetectedSample = digitalRead(MOTION_INPUT_PIN_1) || digitalRead(MOTION_INPUT_PIN_2);
 
+
+
+    if (MotionDetectedAlignedSamples < MOTION_SAMPLES) {
+      if (MotionDetectedSample != MotionDetectedPreviousSample) {
+        MotionDetectedAlignedSamples = 0;
+        MotionDetectedPreviousSample = MotionDetectedSample;
+      } else {
+        MotionDetectedAlignedSamples++;
+      }
+    } else {
+      MotionDetectedAlignedSamples = 0;
+      MotionDetectedPreviousSample = MotionDetectedSample;
+      MotionDetected = MotionDetectedSample;
+      if (MotionDetected != LastReportedMotionDetected) {
+        LastReportedMotionDetected = MotionDetected;
+        getAccessory("Motion Sensor", "MotionDetected");
+        Serial.print("Motion Detected:");
+        Serial.println(MotionDetected);
+      }
+    }
+
+
+
+
+  }
 
   if (startFade) {
     startFade = false;
@@ -262,7 +311,7 @@ void loop() {
 }
 
 void addAccessory() {
-  StaticJsonBuffer<200> jsonLightbulbBuffer;
+  StaticJsonBuffer<300> jsonLightbulbBuffer;
   JsonObject& addLightbulbAccessoryJson = jsonLightbulbBuffer.createObject();
   addLightbulbAccessoryJson["name"] = chipId.c_str();
   addLightbulbAccessoryJson["service"] = serviceType;
@@ -300,6 +349,17 @@ void addAccessory() {
   Serial.println(addTemperatureJsonString.c_str());
   if (client.publish(servicetopic, addTemperatureJsonString.c_str()))
     Serial.println("Temperature Service Added");
+
+  //{"name": "Master Sensor", "service_name": "Motion Sensor", "service": "MotionSensor"}
+  JsonObject& addMotionSensorServiceJson = jsonLightbulbBuffer.createObject();
+  addMotionSensorServiceJson["name"] = chipId.c_str();
+  addMotionSensorServiceJson["service_name"] = "Motion Sensor";
+  addMotionSensorServiceJson["service"] = "MotionSensor";
+  String addMotionSensorServiceJsonString;
+  addMotionSensorServiceJson.printTo(addMotionSensorServiceJsonString);
+  Serial.println(addMotionSensorServiceJsonString.c_str());
+  if (client.publish(servicetopic, addMotionSensorServiceJsonString.c_str()))
+    Serial.println("Motion Service Added");
 }
 
 void maintAccessory() {
@@ -319,7 +379,7 @@ void setReachability() {
 
 
 
-void setAccessory(const char * accessoryCharacteristic,const char *accessoryValue) {
+void setAccessory(const char * accessoryCharacteristic, const char *accessoryValue) {
   Serial.print("Set -> ");
   Serial.print(accessoryCharacteristic);
   Serial.print(" to ");
@@ -342,7 +402,7 @@ void setAccessory(const char * accessoryCharacteristic,const char *accessoryValu
   inFade = false; // Kill the current fade
 }
 
-void getAccessory(const char * accessoryServiceName,const char * accessoryCharacteristic) {
+void getAccessory(const char * accessoryServiceName, const char * accessoryCharacteristic) {
   Serial.print("Get -> ");
   Serial.print(accessoryCharacteristic);
   Serial.print(": ");
@@ -353,29 +413,34 @@ void getAccessory(const char * accessoryServiceName,const char * accessoryCharac
   Json["service_name"] = accessoryServiceName;
   Json["characteristic"] = accessoryCharacteristic;
   if (accessoryCharacteristic == std::string("On")) {
-    Json["value"] = lightBulbOn;   
+    Json["value"] = lightBulbOn;
     Serial.println(lightBulbOn);
   }
   else if (accessoryCharacteristic == std::string("Brightness")) {
-    Json["value"] = lightBrightness;  
+    Json["value"] = lightBrightness;
     Serial.println(lightBrightness);
   }
   else if (accessoryCharacteristic == std::string("Hue")) {
-    Json["value"] = lightHue;   
+    Json["value"] = lightHue;
     Serial.println(lightHue);
   }
   else if (accessoryCharacteristic == std::string("Saturation")) {
-    Json["value"] = lightSaturation;    
+    Json["value"] = lightSaturation;
     Serial.println(lightSaturation);
-  }else if (accessoryCharacteristic == std::string("CurrentTemperature")) {
-    Json["value"] = measuredTemperature;    
+  } else if (accessoryCharacteristic == std::string("CurrentTemperature")) {
+    Json["value"] = measuredTemperature;
     Serial.println(measuredTemperature);
   }
   else if (accessoryCharacteristic == std::string("CurrentRelativeHumidity")) {
     Json["value"] = measuredHumidity;
-    
     Serial.println(measuredHumidity);
   }
+  else if (accessoryCharacteristic == std::string("MotionDetected")) {
+    Json["value"] = MotionDetected;
+    Serial.println(MotionDetected);
+  }
+
+
   String UpdateJson;
   Json.printTo(UpdateJson);
 
@@ -395,7 +460,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   StaticJsonBuffer<512> jsoncallbackBuffer;
   JsonObject& mqttAccessory = jsoncallbackBuffer.parseObject(message);
-  
+
   const char* accessoryName = mqttAccessory["name"];
   const char* accessoryServiceName = mqttAccessory["service_name"];
 
@@ -407,13 +472,13 @@ void callback(char* topic, byte* payload, unsigned int length) {
     if (String(accessoryName) == chipId) {
       const char* accessoryCharacteristic = mqttAccessory["characteristic"];
       const char* accessoryValue = mqttAccessory["value"];
-      setAccessory(accessoryCharacteristic,accessoryValue);
+      setAccessory(accessoryCharacteristic, accessoryValue);
     }
   }
   else if (gettopic == std::string(topic)) {
     if (String(accessoryName) == chipId) {
       const char* accessoryCharacteristic = mqttAccessory["characteristic"];
-      getAccessory(accessoryServiceName,accessoryCharacteristic);
+      getAccessory(accessoryServiceName, accessoryCharacteristic);
     }
   }
 
