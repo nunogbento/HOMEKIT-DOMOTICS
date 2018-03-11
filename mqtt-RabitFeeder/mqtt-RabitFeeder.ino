@@ -1,6 +1,8 @@
 
-// Includes //
 
+
+
+// Includes //
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
@@ -12,28 +14,23 @@
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
 #include "AM2320.h"
+#include <NTPClient.h>
+#include <Servo.h>
+#include <EEPROM.h>
 
 // create a variable of sensor library
 AM2320 sensor;
 
-//Led supports RGB
-#define IsRGB false
-//led is only white
-#define IsWHITE true
 
-#define WHITE_LedPin D8
-#define RED_LedPin 15
-#define GREEN_LedPin 15
-#define BLUE_LedPin 15
+#define LDRPin D6
+#define ServoPWMPin D7
 
-
-#define MOTION_INPUT_PIN_1 D7
-#define MOTION_INPUT_PIN_2 D6
-#define MOTION_SAMPLES 5
+#define AUTO_FEED_ADDRESS 0
+#define LAST_FEED_TIME_ADDRESS 0
 
 const char* mqtt_server = "192.168.1.109";
 uint16_t i;
-char serviceType[256] = "Lightbulb";
+char serviceType[256] = "Switch";
 
 char pubTopic[256];
 char pubMessage[256];
@@ -49,89 +46,59 @@ const char* removetopic = "homebridge/to/remove";
 const char* mainttopic = "homebridge/from/connected";
 const char* servicetopic = "homebridge/to/add/service";
 const char* reachabilitytopic = "homebridge/to/set/reachability";
-
 const char* maintmessage = "";
-
-bool lightBulbOn;
-u_int lightBrightness;
-u_int lightHue;
-u_int lightSaturation;
 
 String chipId;
 String jsonReachabilityString;
-
 float measuredTemperature = 0;
 float measuredHumidity = 0;
 
-// RealPWM values to write to the LEDs (ex. including brightness and state)
-byte realRed = 0;
-byte realGreen = 0;
-byte realBlue = 0;
-byte realWhite = 0;
-
-// Globals for fade/transitions
-bool startFade = false;
-unsigned long lastLoop = 0;
-int transitionTime = 1;
-bool inFade = false;
-int loopCount = 0;
-int stepR, stepG, stepB, stepW;
-int redVal, grnVal, bluVal, whtVal;
+volatile bool Aligned = 0;
+bool MovingToNextSlot = 0;
+bool AutoFeed;
+bool Feed;
 
 //temp and humidity pooling variables
 const unsigned long MeasureInterval = 2 * 60 * 1000UL;
 static unsigned long lastSampleTime = 0 - MeasureInterval;  // initialize such that a reading is due the first time through loop()
 
-
-
-//motion stector stuff
-const unsigned long MotionCheckInterval =  100UL;
-
-
-static unsigned long lastMotionCheckTime = 0 - MotionCheckInterval;
-static bool MotionDetected = 0;
-static bool MotionDetectedSample = 0;
-static bool MotionDetectedPreviousSample = 0;
-static int MotionDetectedAlignedSamples = 0;
-static bool LastReportedMotionDetected = 0;
-
 WiFiClient wclient;
 PubSubClient client(wclient);
 
+
+WiFiUDP ntpUDP;
+
+
+//init servo library object
+Servo servo;
+
+// By default 'time.nist.gov' is used with 60 seconds update interval and
+// no offset
+NTPClient timeClient(ntpUDP);
+
+void handleInterrupt() {
+  Aligned = 1;
+}
+
 void setup() {
   Serial.begin(74880);
+  EEPROM.begin(512);
   chipId = String(serviceType) + String(ESP.getChipId());
 
-  if (IsWHITE) {
-    pinMode(WHITE_LedPin, OUTPUT);
-  }
-  if (IsRGB) {
-    pinMode(RED_LedPin, OUTPUT);
-    pinMode(GREEN_LedPin, OUTPUT);
-    pinMode(BLUE_LedPin, OUTPUT);
-  }
-
-  pinMode(MOTION_INPUT_PIN_1, INPUT);
-  pinMode(MOTION_INPUT_PIN_2, INPUT);
-
+  pinMode(ServoPWMPin, OUTPUT);
+  pinMode(LDRPin, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(LDRPin), handleInterrupt, FALLING);
   analogWriteRange(255);
-
   sensor.begin();
-
-  lightBulbOn = true;
-  lightBrightness = 255;
-  lightHue = 0;
-  lightSaturation = 0;
-
-
+  timeClient.begin();
   StaticJsonBuffer<200> jsonReachabilityBuffer;
   JsonObject& jsonReachability = jsonReachabilityBuffer.createObject();
   jsonReachability["name"] = chipId.c_str();
   jsonReachability["reachable"] = false;
   jsonReachability.printTo(jsonReachabilityString);
+  //setup servo motor
+  servo.detach();
 
-
-  //wifi_conn();
   //WiFiManager
   //Local intialization. Once its business is done, there is no need to keep it around
   WiFiManager wifiManager;
@@ -191,6 +158,25 @@ void loop() {
     ESP.reset();
   }
 
+  timeClient.update();
+
+  //Serial.println(timeClient.getFormattedTime());
+
+
+  if (Aligned) {
+    Aligned = 0;
+    Feed=0;
+    //stop moving
+    Serial.println("aligned");
+    servo.detach();
+    getAccessory("Feed Now Switch", "On");
+    String time = timeClient.getFormattedTime();
+    Serial.print("Rabit Feed at:");
+    Serial.println(time);
+    writeStringToEEPROM(time, LAST_FEED_TIME_ADDRESS);
+
+  }
+
   unsigned long now = millis();
   if (now - lastSampleTime >= MeasureInterval)
   {
@@ -217,110 +203,32 @@ void loop() {
       }
     }
   }
-
-  if (now - lastMotionCheckTime >= MotionCheckInterval)
-  {
-    lastMotionCheckTime += MotionCheckInterval;
-    MotionDetectedSample = digitalRead(MOTION_INPUT_PIN_1) || digitalRead(MOTION_INPUT_PIN_2);
-    if (MotionDetectedAlignedSamples < MOTION_SAMPLES) {
-      if (MotionDetectedSample != MotionDetectedPreviousSample) {
-        MotionDetectedAlignedSamples = 0;
-        MotionDetectedPreviousSample = MotionDetectedSample;
-      } else {
-        MotionDetectedAlignedSamples++;
-      }
-    } else {
-      MotionDetectedAlignedSamples = 0;
-      MotionDetectedPreviousSample = MotionDetectedSample;
-      MotionDetected = MotionDetectedSample;
-      if (MotionDetected != LastReportedMotionDetected) {
-        LastReportedMotionDetected = MotionDetected;
-        getAccessory("Motion Sensor", "MotionDetected");
-        Serial.print("Motion Detected:");
-        Serial.println(MotionDetected);
-      }
-    }
-  }
-
-  if (startFade) {
-    startFade = false;
-    if (IsWHITE )
-      realWhite = (lightBulbOn) ?  map(lightBrightness, 0, 100, 255, 0) : 255;
-    Serial.println(String(lightBulbOn) + String(" --> rw=") + String(realWhite));
-    //if(IsRGB)
-    //todo map HSL to RGB
-
-    // If we don't want to fade, skip it.
-    if (transitionTime == 0) {
-      setColor(realRed, realGreen, realBlue, realWhite);
-
-      if (IsWHITE) {
-        whtVal = realWhite;
-      }
-      if (IsRGB) {
-        redVal = realRed;
-        grnVal = realGreen;
-        bluVal = realBlue;
-      }
-    }
-    else {
-      loopCount = 0;
-      if (IsWHITE) {
-        stepW = calculateStep(whtVal, realWhite);
-      }
-      if (IsRGB) {
-        stepR = calculateStep(redVal, realRed);
-        stepG = calculateStep(grnVal, realGreen);
-        stepB = calculateStep(bluVal, realBlue);
-      }
-      inFade = true;
-    }
-  }
-
-  if (inFade) {
-    startFade = false;
-    unsigned long now = millis();
-    if (now - lastLoop > transitionTime) {
-      if (loopCount <= 1020) {
-        lastLoop = now;
-        if (IsRGB) {
-          redVal = calculateVal(stepR, redVal, loopCount);
-          grnVal = calculateVal(stepG, grnVal, loopCount);
-          bluVal = calculateVal(stepB, bluVal, loopCount);
-        }
-        if (IsWHITE) {
-          whtVal = calculateVal(stepW, whtVal, loopCount);
-        }
-        setColor(redVal, grnVal, bluVal, whtVal); // Write current values to LED pins
-
-        //Serial.print("Loop count: ");
-        //Serial.println(loopCount);
-        loopCount++;
-      }
-      else {
-        inFade = false;
-      }
-    }
-  }
 }
 
 void addAccessory() {
   StaticJsonBuffer<300> jsonLightbulbBuffer;
-  JsonObject& addLightbulbAccessoryJson = jsonLightbulbBuffer.createObject();
-  addLightbulbAccessoryJson["name"] = chipId.c_str();
-  addLightbulbAccessoryJson["service"] = serviceType;
-  addLightbulbAccessoryJson["service_name"] = "Lightbulb";
-  addLightbulbAccessoryJson["Brightness"] = lightBrightness;
-  if (IsRGB) {
-    addLightbulbAccessoryJson["Hue"] = lightHue;
-    addLightbulbAccessoryJson["Saturation"] = lightSaturation;
-  }
-  addLightbulbAccessoryJson["reachable"] = true;
-  String addLightbulbAccessoryJsonString;
-  addLightbulbAccessoryJson.printTo(addLightbulbAccessoryJsonString);
-  Serial.println(addLightbulbAccessoryJsonString.c_str());
-  if (client.publish(addtopic, addLightbulbAccessoryJsonString.c_str()))
-    Serial.println("Lightbulb Service Added");
+  JsonObject& addSwitchAccessoryJson = jsonLightbulbBuffer.createObject();
+  addSwitchAccessoryJson["name"] = chipId.c_str();
+  addSwitchAccessoryJson["service"] = serviceType;
+  addSwitchAccessoryJson["service_name"] = "Feed Now Switch";
+  addSwitchAccessoryJson["reachable"] = true;
+  String addSwitchAccessoryJsonString;
+  addSwitchAccessoryJson.printTo(addSwitchAccessoryJsonString);
+  Serial.println(addSwitchAccessoryJsonString.c_str());
+  if (client.publish(addtopic, addSwitchAccessoryJsonString.c_str()))
+    Serial.println("Manual Feed Service Added");
+
+  //{"name": "Master Sensor", "service_name": "Auto Feed Switch", "service": "Switch"}
+  JsonObject& addSwitchServiceJson = jsonLightbulbBuffer.createObject();
+  addSwitchServiceJson["name"] = chipId.c_str();
+  addSwitchServiceJson["service_name"] = "Auto Feed Switch";
+  addSwitchServiceJson["service"] = "Switch";
+  String addSwitchServiceJsonString;
+  addSwitchServiceJson.printTo(addSwitchServiceJsonString);
+  Serial.println(addSwitchServiceJsonString.c_str());
+  if (client.publish(servicetopic, addSwitchServiceJsonString.c_str()))
+    Serial.println("Auto Feed Service Added");
+
 
   //{"name": "Master Sensor", "service_name": "humidity", "service": "HumiditySensor"}
   JsonObject& addHumidityServiceJson = jsonLightbulbBuffer.createObject();
@@ -344,16 +252,7 @@ void addAccessory() {
   if (client.publish(servicetopic, addTemperatureJsonString.c_str()))
     Serial.println("Temperature Service Added");
 
-  //{"name": "Master Sensor", "service_name": "Motion Sensor", "service": "MotionSensor"}
-  JsonObject& addMotionSensorServiceJson = jsonLightbulbBuffer.createObject();
-  addMotionSensorServiceJson["name"] = chipId.c_str();
-  addMotionSensorServiceJson["service_name"] = "Motion Sensor";
-  addMotionSensorServiceJson["service"] = "MotionSensor";
-  String addMotionSensorServiceJsonString;
-  addMotionSensorServiceJson.printTo(addMotionSensorServiceJsonString);
-  Serial.println(addMotionSensorServiceJsonString.c_str());
-  if (client.publish(servicetopic, addMotionSensorServiceJsonString.c_str()))
-    Serial.println("Motion Service Added");
+
 }
 
 void maintAccessory() {
@@ -373,31 +272,37 @@ void setReachability() {
 
 
 
-void setAccessory(const char * accessoryCharacteristic, const char *accessoryValue) {
+void setAccessory(const char * accessoryServiceName, const char * accessoryCharacteristic, const char *accessoryValue) {
   Serial.print("Set -> ");
+  Serial.print(accessoryServiceName);
+  Serial.print(" -> ");
   Serial.print(accessoryCharacteristic);
   Serial.print(" to ");
   Serial.println(accessoryValue);
 
   if (accessoryCharacteristic == std::string("On")) {
-    lightBulbOn = (accessoryValue == std::string("true"));
-  }
-  else if (accessoryCharacteristic == std::string("Brightness")) {
-    lightBrightness = atoi(accessoryValue);
-  }
-  else if (accessoryCharacteristic == std::string("Hue")) {
-    lightHue = atoi(accessoryValue);;
-  }
-  else if (accessoryCharacteristic == std::string("Saturation")) {
-    lightSaturation = atoi(accessoryValue);;
-  }
+    if (accessoryServiceName == std::string("Auto Feed Switch") ) {
+      byte value = (accessoryValue == std::string("true"));
+      EEPROM.write(AUTO_FEED_ADDRESS, value);
+    } else {
+      Feed = (accessoryValue == std::string("true"));
+      if (Feed) {
+        servo.attach(ServoPWMPin);
+        //stop servo, not sure if needed. I didn't manage to prevent the servo from
+        // slightly turning when powered on the first time.
+        servo.write(110);
+      }
+    }
 
-  startFade = true;
-  inFade = false; // Kill the current fade
+
+
+  }
 }
 
 void getAccessory(const char * accessoryServiceName, const char * accessoryCharacteristic) {
   Serial.print("Get -> ");
+  Serial.print(accessoryServiceName);
+  Serial.print(" -> ");
   Serial.print(accessoryCharacteristic);
   Serial.print(": ");
   //{"name":"{{payload.Id}}","service_name": "PB","characteristic":"ProgrammableSwitchEvent","value":{{payload.Count}}}
@@ -407,20 +312,14 @@ void getAccessory(const char * accessoryServiceName, const char * accessoryChara
   Json["service_name"] = accessoryServiceName;
   Json["characteristic"] = accessoryCharacteristic;
   if (accessoryCharacteristic == std::string("On")) {
-    Json["value"] = lightBulbOn;
-    Serial.println(lightBulbOn);
-  }
-  else if (accessoryCharacteristic == std::string("Brightness")) {
-    Json["value"] = lightBrightness;
-    Serial.println(lightBrightness);
-  }
-  else if (accessoryCharacteristic == std::string("Hue")) {
-    Json["value"] = lightHue;
-    Serial.println(lightHue);
-  }
-  else if (accessoryCharacteristic == std::string("Saturation")) {
-    Json["value"] = lightSaturation;
-    Serial.println(lightSaturation);
+    if (accessoryServiceName == std::string("Auto Feed Switch") ) {
+      byte value = EEPROM.read(AUTO_FEED_ADDRESS);
+      Json["value"] = (value == 1);
+      Serial.println(value == 1);
+    } else {
+      Json["value"] = Feed;
+      Serial.println(Feed);
+    }
   } else if (accessoryCharacteristic == std::string("CurrentTemperature")) {
     Json["value"] = measuredTemperature;
     Serial.println(measuredTemperature);
@@ -429,22 +328,16 @@ void getAccessory(const char * accessoryServiceName, const char * accessoryChara
     Json["value"] = measuredHumidity;
     Serial.println(measuredHumidity);
   }
-  else if (accessoryCharacteristic == std::string("MotionDetected")) {
-    Json["value"] = MotionDetected;
-    Serial.println(MotionDetected);
-  }
-
 
   String UpdateJson;
   Json.printTo(UpdateJson);
-
   Serial.println(UpdateJson);
   client.publish(outtopic, UpdateJson.c_str());
 
 }
 
 
-void callback(char* topic, byte* payload, unsigned int length) {
+void callback(char* topic, byte * payload, unsigned int length) {
 
   char message[length + 1];
   for (int i = 0; i < length; i++) {
@@ -466,7 +359,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
     if (String(accessoryName) == chipId) {
       const char* accessoryCharacteristic = mqttAccessory["characteristic"];
       const char* accessoryValue = mqttAccessory["value"];
-      setAccessory(accessoryCharacteristic, accessoryValue);
+      setAccessory(accessoryServiceName, accessoryCharacteristic, accessoryValue);
     }
   }
   else if (gettopic == std::string(topic)) {
@@ -478,62 +371,24 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 }
 
-int calculateStep(int prevValue, int endValue) {
-  int step = endValue - prevValue; // What's the overall gap?
-  if (step) {                      // If its non-zero,
-    step = 1020 / step;          //   divide by 1020
-  }
+String readStringFromEEPROM(int l, int p) {
+  String temp;
+  for (int n = p; n < l + p; ++n)
+  {
+    if (char(EEPROM.read(n)) != ';') {
+      if (isWhitespace(char(EEPROM.read(n)))) {
+        //do nothing
+      } else temp += String(char(EEPROM.read(n)));
 
-  return step;
+    } else n = l + p;
+
+  }
+  return temp;
 }
 
-int calculateVal(int step, int val, int i) {
-  if ((step) && i % step == 0) { // If step is non-zero and its time to change a value,
-    if (step > 0) {              //   increment the value if step is positive...
-      val += 1;
-    }
-    else if (step < 0) {         //   ...or decrement it if step is negative
-      val -= 1;
-    }
+void writeStringToEEPROM(String x, int pos) {
+  for (int n = pos; n < x.length() + pos; n++) {
+    EEPROM.write(n, x[n - pos]);
   }
-
-  // Defensive driving: make sure val stays in the range 0-255
-  if (val > 255) {
-    val = 255;
-  }
-  else if (val < 0) {
-    val = 0;
-  }
-
-  return val;
 }
 
-void setColor(int inR, int inG, int inB, int inW) {
-  if (IsRGB) {
-    analogWrite(RED_LedPin, inR);
-    analogWrite(GREEN_LedPin, inG);
-    analogWrite(BLUE_LedPin, inB);
-  }
-  if (IsWHITE) {
-    analogWrite(WHITE_LedPin, inW);
-  }
-  Serial.print("Setting LEDs: {");
-  if (IsRGB) {
-    Serial.print("r: ");
-    Serial.print(inR);
-    Serial.print(" , g: ");
-    Serial.print(inG);
-    Serial.print(" , b: ");
-    Serial.print(inB);
-  }
-
-  if (IsWHITE) {
-    if (IsRGB) {
-      Serial.print(", ");
-    }
-    Serial.print("w: ");
-    Serial.print(inW);
-  }
-  Serial.println("}");
-
-}

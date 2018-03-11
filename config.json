@@ -102,14 +102,22 @@
        "ip": "192.168.1.94",
        "setup": "RGBW",
        "purewhite": false
-   }],
+   },
+   {
+        "accessory": "SamsungTV",
+        "name": "TV",
+        "ip": "192.168.1.112",
+        "mac": "7c:64:56:58:64:06",
+        "type": "power"
+    }
+	],
 	"platforms": [
 	{
       "platform": "Hue",
       "users": {
         "001788FFFE2A641A": "GirwW3ZgibL8qfFFY3HOAP3Gop45t2HxlezLla6K"        
       },
-      "lights": true,
+          "lights": true,
 	  "sensors":true,
 	  "excludeSensorTypes": ["CLIP"]
     },
