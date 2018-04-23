@@ -158,28 +158,32 @@ void loop() {
     ESP.reset();
   }
 
-  timeClient.update();
-
-  //Serial.println(timeClient.getFormattedTime());
-
-
   if (Aligned) {
     Aligned = 0;
-    Feed=0;
+    Feed = 0;
     //stop moving
-    Serial.println("aligned");
+    servo.write(64);
     servo.detach();
+    Serial.println("aligned");
     getAccessory("Feed Now Switch", "On");
     String time = timeClient.getFormattedTime();
+    //unsigned long time=timeClient.getEpochTime()()
     Serial.print("Rabit Feed at:");
     Serial.println(time);
     writeStringToEEPROM(time, LAST_FEED_TIME_ADDRESS);
+  }
 
+  if (Feed) {
+    servo.attach(ServoPWMPin);
+    //stop servo, not sure if needed. I didn't manage to prevent the servo from
+    // slightly turning when powered on the first time.
+    servo.write(67);
   }
 
   unsigned long now = millis();
   if (now - lastSampleTime >= MeasureInterval)
   {
+    timeClient.update();
     lastSampleTime += MeasureInterval;
     // sensor.measure() returns boolean value
     // - true indicates measurement is completed and success
@@ -286,12 +290,7 @@ void setAccessory(const char * accessoryServiceName, const char * accessoryChara
       EEPROM.write(AUTO_FEED_ADDRESS, value);
     } else {
       Feed = (accessoryValue == std::string("true"));
-      if (Feed) {
-        servo.attach(ServoPWMPin);
-        //stop servo, not sure if needed. I didn't manage to prevent the servo from
-        // slightly turning when powered on the first time.
-        servo.write(110);
-      }
+
     }
 
 
