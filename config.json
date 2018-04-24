@@ -7,7 +7,7 @@
 		"model": "Raspbery Pi Mordomus Bridge",
 		"serialNumber": "0.0.01"
 	},
-	"description": "Est. Buraca 15 BL.C 2A Lisboa Configuration",
+	"description": "Home Configuration",
 	"accessories": [{
 		"accessory": "HTTP-RGB",
 		"name": "Kitchen Lamp",
@@ -127,7 +127,7 @@
 		{
 		  "name": "Halway",
 		  "videoConfig": {
-			"source": "-re -i rtsp://admin:owel(00)@192.168.1.75:554/onvif2",			
+			"source": "-re -i rtsp://admin:pwd@192.168.1.75:554/onvif2",			
 			"maxStreams": 2,
 			"maxWidth": 1280,
 			"maxHeight": 960,
@@ -136,7 +136,7 @@
 		  {
 		  "name": "Bia",
 		  "videoConfig": {
-			"source": "-re -i rtsp://admin:owel(00)@192.168.1.104:554/onvif1",			
+			"source": "-re -i rtsp://admin:pwd@192.168.1.104:554/onvif1",			
 			"maxStreams": 2,
 			"maxWidth": 1280,
 			"maxHeight": 960,
