@@ -47,5 +47,45 @@
     "name": "WC Wall Switch",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
+},
+{	
+	"service_name": "Kitchen Lamp",
+	"name": "173",
+    "service": "Lightbulb"	
+},
+{
+	"service_name": "Living Room Lamp",
+	"name": "172",
+    "service": "Lightbulb"		
+},
+{
+	"service_name": "Hallway Lamp",
+	"name": "167",
+    "service": "Lightbulb"	
+},
+{	
+	"service_name": "Master Bedroom Lamp",
+	"name": "170",
+    "service": "Lightbulb"	
+},
+{	
+	"service_name": "Master Bedroom WC Lamp",
+	"name": "174",
+    "service": "Lightbulb"
+},
+{
+	"service_name": "Pool Side Bedroom Lamp",
+	"name": "169",
+    "service": "Lightbulb"	
+},
+{
+	"service_name": "Street Bedroom Lamp",
+	"name": "171",
+    "service": "Lightbulb"		
+},
+{
+	"service_name": "WC Lamp",
+	"name": "168",
+    "service": "Lightbulb"		
 }
 ]
