@@ -1,54 +1,65 @@
+
 [{
+    "id":82,
     "name": "Living Room Wall Switch",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
 },
 {
+    "id":83,
     "name": "Kitchen Wall Switch",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
 },
 {
+    "id":80,
     "name": "Hallway Wall Switch 1",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
 },
 {
+    "id":84,
     "name": "Hallway Wall Switch 2",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
 },
 {
+    "id":79,
     "name": "Hallway Wall Switch 3",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
 },
 {
+    "id":76,
     "name": "Master Wall Switch",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
 },
 {
+    "id":77,
     "name": "Pool Side Wall Switch",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
 },
 {
+    "id":78,
     "name": "Street Side Wall Switch",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
 },
 {
+    "id":75,
     "name": "Master WC Wall Switch",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
 },
 {
+    "id":81,
     "name": "WC Wall Switch",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
 },
-{	
+{
 	"service_name": "Kitchen Lamp",
 	"name": "173",
     "service": "Lightbulb"	

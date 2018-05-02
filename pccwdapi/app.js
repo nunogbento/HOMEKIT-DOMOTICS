@@ -14,7 +14,7 @@ var serialPort = new SerialPort('/dev/ttyUSB0', {
 });
 
 const mqttClient = mqtt.connect('mqtt://127.0.0.1')
-
+mqttClient.subscribe("pccwd/setlightbulb")
 var self=this;
 
 var status={};
@@ -100,8 +100,13 @@ parser.on('data', function(data){
 mqttClient.on('message', function (topic, message) {
   // message is Buffer
   console.log(message.toString())
-  
-  client.end()
+  if(topic=="pccwd/setlightbulb"){
+	 data=JSON.parse(message);	 
+	 var addr = parseInt(data.name);    
+	 self.SendQueue=self.SendQueue.concat([0xaa,addr,(data.value)? 0x64:0x01]);		
+	 status[data.name]=data.value;
+  }  
+
 })
 
 

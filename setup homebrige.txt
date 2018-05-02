@@ -1,24 +1,33 @@
     1  passwd
     2  sudo nano /etc/hostname
     3  sudo nano /etc/hosts
-    4  shutdown -r now
-    5  sudo shutdown -r now
+    4  sudo shutdown -r now
     6  hostname
     7  sudo apt-get update
     8  sudo apt-get upgrade
     9  sudo apt-get install git make
-   10  wget https://nodejs.org/dist/v8.9.3/node-v8.9.3-linux-armv6l.tar.xz
-   11  tar xJvf node-v8.9.3-linux-armv6l.tar.xz
-   12  sudo mkdir -p /opt/node
-   13  sudo mv node-v8.9.3-linux-armv6l/* /opt/node/
-   14  sudo update-alternatives --install "/usr/bin/node" "node" "/opt/node/bin/node" 1
-   15  sudo update-alternatives --install "/usr/bin/npm" "npm" "/opt/node/bin/npm" 1
+  SETUP NODEJS from Bynaries FROM
+  curl -sL https://deb.nodesource.com/setup_9.x | sudo -E bash -
+  sudo apt install -y nodejs
+  //node-red
+  sudo npm install -g --unsafe-perm node-red
+  sudo wget https://raw.githubusercontent.com/node-red/raspbian-deb-package/master/resources/nodered.service -O /lib/systemd/system/nodered.service
+sudo wget https://raw.githubusercontent.com/node-red/raspbian-deb-package/master/resources/node-red-start -O /usr/bin/node-red-start
+sudo wget https://raw.githubusercontent.com/node-red/raspbian-deb-package/master/resources/node-red-stop -O /usr/bin/node-red-stop
+sudo chmod +x /usr/bin/node-red-st*
+sudo systemctl daemon-reload
+sudo systemctl enable nodered.service
+sudo systemctl start nodered.service
+
    20  sudo apt-get install libavahi-compat-libdnssd-dev
        142  sudo apt-get install ffmpeg
+	   
    21  cd /usr/local
    22  cd lib
    23  sudo npm install -g --unsafe-perm homebridge
    24  cd /home/pi
+   
+   
    27  sudo mv homebridge /etc/default
    28  sudo nano /etc/default/homebridge 
    30  sudo mv homebridge /etc/default

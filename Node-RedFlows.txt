@@ -1,1 +1,451 @@
-[{"id":"6bbd9d20.fd9404","type":"tab","label":"homebridge Playground","disabled":false,"info":""},{"id":"3ce22a1c.a4dc76","type":"tab","label":"homebridge","disabled":false,"info":""},{"id":"1b7f7397.88e73c","type":"serial-port","z":"","serialport":"/dev/ttyUSB0","serialbaud":"14400","databits":"8","parity":"none","stopbits":"1","newline":"\\n","bin":"false","out":"char","addchar":false},{"id":"94793c9c.6fed4","type":"mqtt-broker","z":"","broker":"localhost","port":"1883","clientid":"","usetls":false,"compatmode":true,"keepalive":"60","cleansession":true,"willTopic":"","willQos":"0","willPayload":"","birthTopic":"","birthQos":"0","birthPayload":""},{"id":"ac76e7a8.a8ba18","type":"mqtt out","z":"6bbd9d20.fd9404","name":"Add accessory","topic":"homebridge/to/add","qos":"","retain":"","broker":"94793c9c.6fed4","x":460,"y":200,"wires":[]},{"id":"c0356933.df93c8","type":"mqtt out","z":"6bbd9d20.fd9404","name":"SET","topic":"homebridge/to/set","qos":"","retain":"","broker":"94793c9c.6fed4","x":430,"y":460,"wires":[]},{"id":"e9bd946.1684368","type":"mqtt out","z":"6bbd9d20.fd9404","name":"Remove Accessory","topic":"homebridge/to/remove","qos":"","retain":"","broker":"94793c9c.6fed4","x":470,"y":380,"wires":[]},{"id":"1a3d2b0f.4baab5","type":"inject","z":"6bbd9d20.fd9404","name":"","topic":"GEt all","payload":"{\"Service\":\"Switch\"}","payloadType":"json","repeat":"","crontab":"","once":false,"x":150,"y":140,"wires":[["ac196181.380da"]]},{"id":"ac196181.380da","type":"mqtt out","z":"6bbd9d20.fd9404","name":"","topic":"homebridge/to/get","qos":"","retain":"","broker":"94793c9c.6fed4","x":470,"y":140,"wires":[]},{"id":"a34584e3.2a40d8","type":"mqtt in","z":"6bbd9d20.fd9404","name":"","topic":"pccwd/keypress","qos":"2","broker":"94793c9c.6fed4","x":660,"y":80,"wires":[["7f0c5440.4b4e9c"]]},{"id":"eca31a9f.d15408","type":"inject","z":"6bbd9d20.fd9404","name":"","topic":"","payload":"{\"Id\":82,\"Count\":2}","payloadType":"json","repeat":"","crontab":"","once":false,"x":130,"y":80,"wires":[["2d3a6e55.fb5722"]]},{"id":"2d3a6e55.fb5722","type":"mqtt out","z":"6bbd9d20.fd9404","name":"","topic":"pccwd/keypress","qos":"","retain":"","broker":"94793c9c.6fed4","x":460,"y":80,"wires":[]},{"id":"f18d0eff.3e3cc","type":"mqtt out","z":"3ce22a1c.a4dc76","name":"Add accessory","topic":"homebridge/to/add","qos":"","retain":"","broker":"94793c9c.6fed4","x":860,"y":220,"wires":[]},{"id":"76d852c6.25a9fc","type":"mqtt out","z":"3ce22a1c.a4dc76","name":"SET","topic":"homebridge/to/set","qos":"","retain":"","broker":"94793c9c.6fed4","x":830,"y":340,"wires":[]},{"id":"50b5a6ee.173c58","type":"mqtt out","z":"3ce22a1c.a4dc76","name":"Remove Accessory","topic":"homebridge/to/remove","qos":"","retain":"","broker":"94793c9c.6fed4","x":870,"y":280,"wires":[]},{"id":"6332d566.a4eb1c","type":"debug","z":"3ce22a1c.a4dc76","name":"","active":true,"console":"false","complete":"false","x":850,"y":160,"wires":[]},{"id":"d4214f69.0946","type":"mqtt in","z":"3ce22a1c.a4dc76","name":"","topic":"homebridge/from/#","qos":"2","broker":"94793c9c.6fed4","x":130,"y":160,"wires":[["6332d566.a4eb1c"]]},{"id":"a80a1f8e.dce45","type":"inject","z":"3ce22a1c.a4dc76","name":"Delete All","topic":"","payload":"DELETE","payloadType":"flow","repeat":"","crontab":"","once":false,"x":100,"y":280,"wires":[[]]},{"id":"5facb97b.cc33d8","type":"mqtt in","z":"3ce22a1c.a4dc76","name":"","topic":"pccwd/keypress","qos":"2","broker":"94793c9c.6fed4","x":120,"y":340,"wires":[["f0354ce3.1f2c8"]]},{"id":"f0354ce3.1f2c8","type":"json","z":"3ce22a1c.a4dc76","name":"","pretty":false,"x":290,"y":340,"wires":[["3146326b.5e951e"]]},{"id":"323eb618.3d0b8a","type":"file in","z":"3ce22a1c.a4dc76","name":"Config","filename":"/var/homebridge/mordomusswitches.json","format":"utf8","chunk":false,"sendError":false,"x":310,"y":220,"wires":[["76c55b32.3aab84"]]},{"id":"2c4371a2.34cd8e","type":"inject","z":"3ce22a1c.a4dc76","name":"CREATE Switches","topic":"","payload":"CREATE","payloadType":"flow","repeat":"","crontab":"","once":false,"x":130,"y":220,"wires":[["323eb618.3d0b8a"]]},{"id":"76c55b32.3aab84","type":"json","z":"3ce22a1c.a4dc76","name":"","pretty":false,"x":470,"y":220,"wires":[["e053945a.50c248"]]},{"id":"e053945a.50c248","type":"split","z":"3ce22a1c.a4dc76","name":"For..each","splt":"","spltType":"str","arraySplt":1,"arraySpltType":"len","stream":false,"addname":"","x":640,"y":220,"wires":[["f18d0eff.3e3cc"]]},{"id":"ef1b6611.1b1498","type":"change","z":"3ce22a1c.a4dc76","name":"","rules":[{"t":"delete","p":"payload.service_name","pt":"msg"},{"t":"delete","p":"payload.service","pt":"msg"}],"action":"","property":"","from":"","to":"","reg":false,"x":660,"y":280,"wires":[["50b5a6ee.173c58"]]},{"id":"b6e769.1fda9898","type":"file in","z":"3ce22a1c.a4dc76","name":"Config","filename":"/var/homebridge/mordomusswitches.json","format":"utf8","chunk":false,"sendError":false,"x":230,"y":280,"wires":[["465e158c.75dbbc"]]},{"id":"465e158c.75dbbc","type":"json","z":"3ce22a1c.a4dc76","name":"","pretty":false,"x":370,"y":280,"wires":[["a0fad0ed.c172a"]]},{"id":"a0fad0ed.c172a","type":"split","z":"3ce22a1c.a4dc76","name":"For..each","splt":"\\n","spltType":"str","arraySplt":1,"arraySpltType":"len","stream":false,"addname":"","x":500,"y":280,"wires":[["ef1b6611.1b1498"]]},{"id":"3146326b.5e951e","type":"change","z":"3ce22a1c.a4dc76","name":"MAP PCCWD ID","rules":[{"t":"change","p":"payload.Id","pt":"msg","from":"82","fromt":"num","to":"Living Room Wall Switch","tot":"str"},{"t":"change","p":"payload.Id","pt":"msg","from":"84","fromt":"num","to":"Hallway Wall Switch 2","tot":"str"},{"t":"change","p":"payload.Id","pt":"msg","from":"83","fromt":"num","to":"Kitchen Wall Switch","tot":"str"},{"t":"change","p":"payload.Id","pt":"msg","from":"81","fromt":"num","to":"WC Wall Switch","tot":"str"},{"t":"change","p":"payload.Count","pt":"msg","from":"1","fromt":"num","to":"0","tot":"num"},{"t":"change","p":"payload.Count","pt":"msg","from":"2","fromt":"num","to":"1","tot":"num"},{"t":"change","p":"payload.Count","pt":"msg","from":"3","fromt":"num","to":"2","tot":"num"},{"t":"change","p":"payload.Id","pt":"msg","from":"80","fromt":"num","to":"Hallway Wall Switch 1","tot":"str"},{"t":"change","p":"payload.Id","pt":"msg","from":"79","fromt":"num","to":"Hallway Wall Switch 3","tot":"str"},{"t":"change","p":"payload.Id","pt":"msg","from":"76","fromt":"num","to":"Master Wall Switch","tot":"str"},{"t":"change","p":"payload.Id","pt":"msg","from":"75","fromt":"num","to":"Master WC Wall Switch","tot":"str"},{"t":"change","p":"payload.Id","pt":"msg","from":"77","fromt":"num","to":"Pool Side Wall Switch","tot":"str"},{"t":"change","p":"payload.Id","pt":"msg","from":"78","fromt":"num","to":"Street Side Wall Switch","tot":"str"}],"action":"","property":"","from":"","to":"","reg":false,"x":490,"y":340,"wires":[["9137a4c2.779218"]]},{"id":"9137a4c2.779218","type":"template","z":"3ce22a1c.a4dc76","name":"","field":"payload","fieldType":"msg","format":"handlebars","syntax":"mustache","template":"{\"name\":\"{{payload.Id}}\",\"service_name\": \"PB\",\"characteristic\":\"ProgrammableSwitchEvent\",\"value\":{{payload.Count}}}","output":"str","x":670,"y":340,"wires":[["76d852c6.25a9fc","6332d566.a4eb1c"]]},{"id":"7f0c5440.4b4e9c","type":"debug","z":"6bbd9d20.fd9404","name":"","active":true,"console":"false","complete":"false","x":910,"y":80,"wires":[]},{"id":"8232041a.6e3cb8","type":"inject","z":"6bbd9d20.fd9404","name":"Add temp Service","topic":"","payload":"{\"name\": \"Master Sensor\", \"service_name\": \"temperature\", \"service\": \"TemperatureSensor\"}","payloadType":"json","repeat":"","crontab":"","once":false,"x":120,"y":260,"wires":[["16a826e0.5733c9"]]},{"id":"16a826e0.5733c9","type":"mqtt out","z":"6bbd9d20.fd9404","name":"Add Service","topic":"homebridge/to/add/service","qos":"","retain":"","broker":"94793c9c.6fed4","x":450,"y":260,"wires":[]},{"id":"694a370f.00fee8","type":"inject","z":"6bbd9d20.fd9404","name":"","topic":"","payload":"","payloadType":"date","repeat":"","crontab":"","once":false,"x":100,"y":320,"wires":[[]]},{"id":"eab62b8.01328d8","type":"inject","z":"6bbd9d20.fd9404","name":"","topic":"","payload":"{\"name\": \"Switch1484364\"}","payloadType":"json","repeat":"","crontab":"","once":false,"x":90,"y":380,"wires":[["e9bd946.1684368"]]},{"id":"f50cb49c.d9f548","type":"mqtt in","z":"6bbd9d20.fd9404","name":"","topic":"homebridge/to/add","qos":"2","broker":"94793c9c.6fed4","x":110,"y":580,"wires":[["2613b253.35566e"]]},{"id":"2613b253.35566e","type":"debug","z":"6bbd9d20.fd9404","name":"","active":true,"console":"false","complete":"false","x":450,"y":580,"wires":[]},{"id":"508c765a.220138","type":"inject","z":"6bbd9d20.fd9404","name":"","topic":"","payload":"{\"name\":\"Lightbulb14246808\",\"service_name\":\"Lightbulb14246808\",\"characteristic\":\"Brightness\",\"value\":8}","payloadType":"json","repeat":"","crontab":"","once":false,"x":90,"y":460,"wires":[["c0356933.df93c8"]]},{"id":"347d3603.1fc42a","type":"mqtt in","z":"6bbd9d20.fd9404","name":"","topic":"homebridge/to/#","qos":"2","broker":"94793c9c.6fed4","x":85.69999694824219,"y":695.0000324249268,"wires":[["2613b253.35566e"]]}]
+[
+    {
+        "id": "c76b3260.35766",
+        "type": "mqtt out",
+        "z": "34dcdf43.55987",
+        "name": "Add accessory",
+        "topic": "homebridge/to/add",
+        "qos": "",
+        "retain": "",
+        "broker": "20681137.8bf77e",
+        "x": 820,
+        "y": 220,
+        "wires": []
+    },
+    {
+        "id": "3aab9aac.a2fc86",
+        "type": "mqtt out",
+        "z": "34dcdf43.55987",
+        "name": "Remove Accessory",
+        "topic": "homebridge/to/remove",
+        "qos": "",
+        "retain": "",
+        "broker": "20681137.8bf77e",
+        "x": 830,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "408977b2.bbfdd8",
+        "type": "debug",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "x": 810,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "646cdfd.92ec62",
+        "type": "mqtt in",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "topic": "homebridge/from/#",
+        "qos": "2",
+        "broker": "20681137.8bf77e",
+        "x": 130,
+        "y": 160,
+        "wires": [
+            [
+                "408977b2.bbfdd8"
+            ]
+        ]
+    },
+    {
+        "id": "543d48db.f44478",
+        "type": "inject",
+        "z": "34dcdf43.55987",
+        "name": "Delete All",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": "",
+        "x": 100,
+        "y": 280,
+        "wires": [
+            [
+                "4a8205b8.9099fc"
+            ]
+        ]
+    },
+    {
+        "id": "6a449c41.b1eb94",
+        "type": "mqtt in",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "topic": "pccwd/keypress",
+        "qos": "2",
+        "broker": "20681137.8bf77e",
+        "x": 120,
+        "y": 360,
+        "wires": [
+            [
+                "43861ea.018f6e",
+                "de4c77fc.5377a8"
+            ]
+        ]
+    },
+    {
+        "id": "43861ea.018f6e",
+        "type": "json",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 350,
+        "y": 340,
+        "wires": [
+            [
+                "30029a73.c3d586"
+            ]
+        ]
+    },
+    {
+        "id": "d363c47e.f2e808",
+        "type": "file in",
+        "z": "34dcdf43.55987",
+        "name": "Config",
+        "filename": "/home/pi/mordomusdevices.json",
+        "format": "utf8",
+        "chunk": false,
+        "sendError": false,
+        "x": 230,
+        "y": 220,
+        "wires": [
+            [
+                "745246af.e96cf8"
+            ]
+        ]
+    },
+    {
+        "id": "2005c6e4.e8ce6a",
+        "type": "inject",
+        "z": "34dcdf43.55987",
+        "name": "CREATE",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": "",
+        "x": 100,
+        "y": 220,
+        "wires": [
+            [
+                "d363c47e.f2e808"
+            ]
+        ]
+    },
+    {
+        "id": "745246af.e96cf8",
+        "type": "json",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "property": "payload",
+        "action": "",
+        "pretty": false,
+        "x": 350,
+        "y": 220,
+        "wires": [
+            [
+                "7d0125f7.2cd01c"
+            ]
+        ]
+    },
+    {
+        "id": "7d0125f7.2cd01c",
+        "type": "split",
+        "z": "34dcdf43.55987",
+        "name": "For..each",
+        "splt": "iterate",
+        "spltType": "str",
+        "arraySplt": 1,
+        "arraySpltType": "len",
+        "stream": false,
+        "addname": "",
+        "x": 480,
+        "y": 220,
+        "wires": [
+            [
+                "4a6675b2.f03b6c"
+            ]
+        ]
+    },
+    {
+        "id": "4a8205b8.9099fc",
+        "type": "file in",
+        "z": "34dcdf43.55987",
+        "name": "Config",
+        "filename": "/home/pi/mordomusdevices.json",
+        "format": "utf8",
+        "chunk": false,
+        "sendError": false,
+        "x": 230,
+        "y": 280,
+        "wires": [
+            [
+                "66a77900.141c98"
+            ]
+        ]
+    },
+    {
+        "id": "66a77900.141c98",
+        "type": "json",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "pretty": false,
+        "x": 350,
+        "y": 280,
+        "wires": [
+            [
+                "ac2db8e4.dda548"
+            ]
+        ]
+    },
+    {
+        "id": "ac2db8e4.dda548",
+        "type": "split",
+        "z": "34dcdf43.55987",
+        "name": "For..each",
+        "splt": "\\n",
+        "spltType": "str",
+        "arraySplt": 1,
+        "arraySpltType": "len",
+        "stream": false,
+        "addname": "",
+        "x": 480,
+        "y": 280,
+        "wires": [
+            [
+                "d1469b14.9e8938"
+            ]
+        ]
+    },
+    {
+        "id": "aec274ee.c20ec8",
+        "type": "mqtt in",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "topic": "homebridge/from/set",
+        "qos": "2",
+        "broker": "20681137.8bf77e",
+        "x": 130,
+        "y": 551,
+        "wires": [
+            [
+                "83f3ca69.b621b8"
+            ]
+        ]
+    },
+    {
+        "id": "83f3ca69.b621b8",
+        "type": "json",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "property": "payload",
+        "action": "",
+        "pretty": false,
+        "x": 350,
+        "y": 551,
+        "wires": [
+            [
+                "b5005f7a.275a2"
+            ]
+        ]
+    },
+    {
+        "id": "c9f718c2.50ca48",
+        "type": "mqtt in",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "topic": "homebridge/from/get",
+        "qos": "2",
+        "broker": "20681137.8bf77e",
+        "x": 130,
+        "y": 460,
+        "wires": [
+            [
+                "9831f7d4.032e78"
+            ]
+        ]
+    },
+    {
+        "id": "9831f7d4.032e78",
+        "type": "json",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 350,
+        "y": 460,
+        "wires": [
+            [
+                "c705465b.c04ec8"
+            ]
+        ]
+    },
+    {
+        "id": "a1e60f04.4521f",
+        "type": "mqtt out",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "topic": "homebridge/to/set",
+        "qos": "",
+        "retain": "",
+        "broker": "20681137.8bf77e",
+        "x": 830,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "c543c43.0ed5138",
+        "type": "function",
+        "z": "34dcdf43.55987",
+        "name": "SetStatus",
+        "func": "if(msg.payload.Count>1)\n    return;\n    \nvar Lightbulbs=flow.get('Lightbulbs');\n\nif(Lightbulbs===null)\n    return;\n\nvar id=0;\nswitch (msg.payload.Id)\n\t{\n\t\tcase 75:\n\t\t    id=\"174\";\n\t\t\tbreak;\n\t\tcase 76:\n\t\t    id=\"170\";\n\t\t\tbreak;\n\t\tcase 77:\n\t\t    id=\"169\";\n\t\t\tbreak;\n\t\tcase 78:\n\t\t    id=\"171\";\n\t\t\tbreak;\n\t\tcase 81: \n\t\t    id=\"168\";\n\t\t\tbreak;\n\t\tcase 82: \n\t\t    id=\"172\";\n\t\t\tbreak;\n\t\tcase 83: \n\t\t    id=\"173\";\n\t\t\tbreak;\n\t\tcase 84: \n\t\tcase 80: \n\t\tcase 79: \n\t\t    id=\"167\";\n\t\t\tbreak;\t   \n\t}\n\nif(Lightbulbs[id]===null)\n    return;\n    \nLightbulbs[id].status=!Lightbulbs[id].status||false;\nflow.set('Lightbulbs',Lightbulbs);\n\nreturn { payload: {\n    name:Lightbulbs[id].name,\n    service_name:Lightbulbs[id].service_name,\n    characteristic:\"On\",\n    value:Lightbulbs[id].status\n}};",
+        "outputs": 1,
+        "noerr": 0,
+        "x": 520,
+        "y": 400,
+        "wires": [
+            [
+                "a1e60f04.4521f"
+            ]
+        ]
+    },
+    {
+        "id": "de4c77fc.5377a8",
+        "type": "json",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 350,
+        "y": 400,
+        "wires": [
+            [
+                "c543c43.0ed5138"
+            ]
+        ]
+    },
+    {
+        "id": "b5005f7a.275a2",
+        "type": "function",
+        "z": "34dcdf43.55987",
+        "name": "set status",
+        "func": "var Lightbulbs=flow.get('Lightbulbs');\nLightbulbs[msg.payload.name].status=msg.payload.value;\nflow.set('Lightbulbs',Lightbulbs);\nreturn msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "x": 520,
+        "y": 551,
+        "wires": [
+            [
+                "1f882ce3.ae5ba3"
+            ]
+        ]
+    },
+    {
+        "id": "c705465b.c04ec8",
+        "type": "function",
+        "z": "34dcdf43.55987",
+        "name": "GetStatus",
+        "func": "var Lightbulbs=flow.get('Lightbulbs');\nmsg.payload.value=Lightbulbs[parseInt(msg.payload.name)].status||false;\nreturn msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "x": 520,
+        "y": 460,
+        "wires": [
+            [
+                "a1e60f04.4521f"
+            ]
+        ]
+    },
+    {
+        "id": "4a6675b2.f03b6c",
+        "type": "function",
+        "z": "34dcdf43.55987",
+        "name": "StoreFlowData",
+        "func": "switch(msg.payload.service){\n    case \"Lightbulb\":\n        Lightbulbs=flow.get('Lightbulbs')||[];\n        Lightbulbs[msg.payload.name]=msg.payload;\n        flow.set('Lightbulbs',Lightbulbs);\n    break;\n    case \"StatelessProgrammableSwitch\":\n        StatelessProgrammableSwitchs=flow.get('StatelessProgrammableSwitchs')||[];\n        StatelessProgrammableSwitchs[msg.payload.id]=msg.payload;\n        flow.set('StatelessProgrammableSwitchs',StatelessProgrammableSwitchs);\n    break;\n}\n\nreturn { payload: {\n   name: msg.payload.name,\n   service_name: msg.payload.service_name,\n   service: msg.payload.service}\n};\n\n\n",
+        "outputs": 1,
+        "noerr": 0,
+        "x": 640,
+        "y": 220,
+        "wires": [
+            [
+                "c76b3260.35766"
+            ]
+        ]
+    },
+    {
+        "id": "d1469b14.9e8938",
+        "type": "function",
+        "z": "34dcdf43.55987",
+        "name": "ClearFlowData",
+        "func": "switch(msg.payload.service){\n    case \"Lightbulb\":\n        Lightbulbs=flow.get('Lightbulbs')||[];\n        Lightbulbs=Lightbulbs.splice(msg.payload.name, 1);\n        flow.set('Lightbulbs',Lightbulbs);\n    break;\n    case \"StatelessProgrammableSwitch\":\n        StatelessProgrammableSwitchs=flow.get('StatelessProgrammableSwitchs')||[];\n        StatelessProgrammableSwitchs= StatelessProgrammableSwitchs.splice(msg.payload.id,1);\n        flow.set('StatelessProgrammableSwitchs',StatelessProgrammableSwitchs);\n    break;\n}\n\nreturn  { payload: {name:msg.payload.name}};\n\n\n",
+        "outputs": 1,
+        "noerr": 0,
+        "x": 640,
+        "y": 280,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "30029a73.c3d586",
+        "type": "function",
+        "z": "34dcdf43.55987",
+        "name": "Click",
+        "func": "var sswitch=flow.get('StatelessProgrammableSwitchs')[msg.payload.Id];\n\nreturn { payload: {\n   name: sswitch.name,\n   service_name: sswitch.service_name,\n   characteristic: \"ProgrammableSwitchEvent\",\n   value: msg.payload.Count-1\n}\n};\n\n\n",
+        "outputs": 1,
+        "noerr": 0,
+        "x": 510,
+        "y": 340,
+        "wires": [
+            [
+                "a1e60f04.4521f"
+            ]
+        ]
+    },
+    {
+        "id": "1f882ce3.ae5ba3",
+        "type": "mqtt out",
+        "z": "34dcdf43.55987",
+        "name": "",
+        "topic": "pccwd/setlightbulb",
+        "qos": "",
+        "retain": "",
+        "broker": "20681137.8bf77e",
+        "x": 830,
+        "y": 550,
+        "wires": []
+    },
+    {
+        "id": "20681137.8bf77e",
+        "type": "mqtt-broker",
+        "z": "",
+        "broker": "localhost",
+        "port": "1883",
+        "clientid": "",
+        "usetls": false,
+        "compatmode": true,
+        "keepalive": "60",
+        "cleansession": true,
+        "willTopic": "",
+        "willQos": "0",
+        "willPayload": "",
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthPayload": ""
+    }
+]
