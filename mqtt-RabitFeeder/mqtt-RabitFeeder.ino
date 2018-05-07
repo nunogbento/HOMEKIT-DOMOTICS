@@ -1,7 +1,3 @@
-
-
-
-
 // Includes //
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
@@ -57,6 +53,7 @@ volatile bool Aligned = 0;
 bool MovingToNextSlot = 0;
 bool AutoFeed;
 bool Feed;
+unsigned long StartFeedOn;
 
 //temp and humidity pooling variables
 const unsigned long MeasureInterval = 2 * 60 * 1000UL;
@@ -164,23 +161,31 @@ void loop() {
     //stop moving
     servo.write(64);
     servo.detach();
-    Serial.println("aligned");
     getAccessory("Feed Now Switch", "On");
     String time = timeClient.getFormattedTime();
-    //unsigned long time=timeClient.getEpochTime()()
-    Serial.print("Rabit Feed at:");
-    Serial.println(time);
     writeStringToEEPROM(time, LAST_FEED_TIME_ADDRESS);
   }
-
+  unsigned long now = millis();
   if (Feed) {
     servo.attach(ServoPWMPin);
-    //stop servo, not sure if needed. I didn't manage to prevent the servo from
-    // slightly turning when powered on the first time.
+    servo.write(77);
+    delay(100);
     servo.write(67);
+    delay(300);
+    servo.write(55);
+    delay(100);
+    servo.write(67);
+    //if((now-StartFeedOn)>2000){
+    // servo.write(40);
+    // delay(200);
+    //  servo.write(67);
+    //}    
   }
 
-  unsigned long now = millis();
+  
+
+
+
   if (now - lastSampleTime >= MeasureInterval)
   {
     timeClient.update();
@@ -290,11 +295,8 @@ void setAccessory(const char * accessoryServiceName, const char * accessoryChara
       EEPROM.write(AUTO_FEED_ADDRESS, value);
     } else {
       Feed = (accessoryValue == std::string("true"));
-
+      StartFeedOn=millis();
     }
-
-
-
   }
 }
 

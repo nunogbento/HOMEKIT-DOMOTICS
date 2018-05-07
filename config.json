@@ -26,7 +26,7 @@
    {
         "accessory": "SamsungTV",
         "name": "TV",
-        "ip": "192.168.1.69",
+        "ip": "192.168.1.145",
         "mac": "7c:64:56:58:64:06",
         "type": "power"
     },
@@ -37,8 +37,8 @@
 	 "username": "",
 	 "password": "",
 	 "topics": {
-			"statusGet": "stat/sonoff/POWER",
-			"statusSet": "cmnd/sonoff/POWER"
+			"statusGet": "stat/sonoff1/POWER",
+			"statusSet": "cmnd/sonoff1/POWER"
 		}
 	}
 	],
@@ -53,25 +53,25 @@
 	  "excludeSensorTypes": ["CLIP"]
     },
 	{
-	  "platform": "Camera-IP",
+	  "platform": "Camera-ffmpeg-omx",
 	  "cameras": [
 		{
 		  "name": "Lobby",
 		  "videoConfig": {
-			"source": "-re -i rtsp://admin:owel(00)@192.168.1.67:554/onvif1",			
+			"source": "-re -i rtsp://admin:owel(00)@192.168.1.67:554/onvif2",			
 			"maxStreams": 2,
 			"maxWidth": 1280,
-			"maxHeight": 960,
-			"maxFPS": 30
+			"maxHeight": 720,
+			"maxFPS": 30      	   
 		  }},
 		  {
 		  "name": "Bia",
 		  "videoConfig": {
-			"source": "-re -i rtsp://admin:owel(00)@192.168.1.168:554/onvif1",			
+			"source": "-re -i rtsp://admin:owel(00)@192.168.1.168:554/onvif2",			
 			"maxStreams": 2,
 			"maxWidth": 1280,
-			"maxHeight": 960,
-			"maxFPS": 30
+			"maxHeight": 720,
+			"maxFPS": 30      	    
 		  }
 		}
 	  ]
