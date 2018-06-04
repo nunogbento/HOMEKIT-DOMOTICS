@@ -26,7 +26,7 @@
    {
         "accessory": "SamsungTV",
         "name": "TV",
-        "ip": "192.168.1.145",
+        "ip": "192.168.1.178",
         "mac": "7c:64:56:58:64:06",
         "type": "power"
     },
@@ -40,6 +40,16 @@
 			"statusGet": "stat/sonoff1/POWER",
 			"statusSet": "cmnd/sonoff1/POWER"
 		}
+	},
+	{
+		"accessory": "mqtt-temperature-tasmota",		
+		"name": "Aquarium Temperature",
+		"url": "mqtt://192.168.1.109",
+		"username": "",
+		"password": "",		
+		"topic": "tele/sonoff1/SENSOR",
+		"activityTopic": "tele/sonoff1/LWT",
+		"activityParameter": "Online"
 	}
 	],
 	"platforms": [
