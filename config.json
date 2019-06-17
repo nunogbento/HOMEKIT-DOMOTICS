@@ -12,23 +12,22 @@
 	{
        "accessory": "MagicHome",
        "name": "Pool Side LED Strip",
-       "ip": "192.168.1.90",
+       "ip": "192.168.1.99",
        "setup": "RGBW",
        "purewhite": false
    },
    {
        "accessory": "MagicHome",
        "name": "Street Side LED Strip",
-       "ip": "192.168.1.84",
+       "ip": "192.168.1.98",
        "setup": "RGBW",
        "purewhite": false
    },
    {
-        "accessory": "SamsungTV",
+        "accessory": "SamsungSmartTV2018",
         "name": "TV",
-        "ip": "192.168.1.178",
-        "mac": "7c:64:56:58:64:06",
-        "type": "power"
+        "ip_address": "192.168.1.111",
+        "mac_address": "7c:64:56:cc:d5:ca"
     },
 	 {
 	 "accessory": "mqtt-switch-tasmota",
@@ -73,7 +72,8 @@
 			"maxWidth": 1280,
 			"maxHeight": 720,
 			"maxFPS": 30      	   
-		  }},
+		  }
+		  },
 		  {
 		  "name": "Bia",
 		  "videoConfig": {
@@ -83,7 +83,17 @@
 			"maxHeight": 720,
 			"maxFPS": 30      	    
 		  }
-		}
+		  },
+		  {
+		  "name": "Bia2",
+		  "videoConfig": {
+			"source": "-re -i rtsp://admin:@192.168.1.79:554",			
+			"maxStreams": 2,
+			"maxWidth": 1280,
+			"maxHeight": 720,
+			"maxFPS": 30      	    
+		  }
+		  }
 	  ]
 	},
 	{
@@ -92,6 +102,44 @@
 	  "url": "mqtt://127.0.0.1",
 	  "topic_type": "multiple",
 	  "topic_prefix": "homebridge"
-	}
+	},
+	{
+            "platform": "TuyaLan",
+            "devices": [                
+                {
+                    "name": "Light",
+                    "type": "SimpleDimmer",					     
+					"dp": 3,
+                    "manufacturer": "ME",
+                    "model": "Smart Wifi Dimmer",
+                    "id": "86105058cc50e361d5ac",
+                    "key": "a92cddce65b15b45"					
+                },
+                 {
+                    "name": "outlet 1",
+                    "type": "Outlet",
+                    "manufacturer": "Blitzwolf",
+                    "model": "BW-SHP-6",
+                    "id": "07200341dc4f22359343",
+                    "key": "d944b3ede5a7326a"
+                },
+                 {
+                    "name": "outlet 2",
+                    "type": "Outlet",
+                    "manufacturer": "Blitzwolf",
+                    "model": "BW-SHP-6",
+                    "id": "14311007cc50e3d42953",
+                    "key": "8f5e2a33e7d8ae31"
+                },
+                 {
+                    "name": "outlet 3",
+                    "type": "Outlet",
+                    "manufacturer": "Blitzwolf",
+                    "model": "BW-SHP-2",
+                    "id": "1528077384f3eb22eb0c",
+                    "key": "ee6db570b6ef0fb1"
+                }
+            ]
+    }
 	]
 }

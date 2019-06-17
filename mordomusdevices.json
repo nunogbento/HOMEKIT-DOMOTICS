@@ -1,102 +1,79 @@
 
 [{
-    "id":82,
-    "name": "Living Room Wall Switch",
-    "service_name": "PB",
-    "service": "StatelessProgrammableSwitch"
-},
-{
-    "id":83,
-    "name": "Kitchen Wall Switch",
-    "service_name": "PB",
-    "service": "StatelessProgrammableSwitch"
-},
-{
     "id":80,
-    "name": "Hallway Wall Switch 1",
-    "service_name": "PB",
-    "service": "StatelessProgrammableSwitch"
-},
-{
-    "id":84,
-    "name": "Hallway Wall Switch 2",
-    "service_name": "PB",
-    "service": "StatelessProgrammableSwitch"
-},
-{
-    "id":79,
-    "name": "Hallway Wall Switch 3",
-    "service_name": "PB",
-    "service": "StatelessProgrammableSwitch"
-},
-{
-    "id":76,
-    "name": "Master Wall Switch",
-    "service_name": "PB",
-    "service": "StatelessProgrammableSwitch"
-},
-{
-    "id":77,
-    "name": "Pool Side Wall Switch",
-    "service_name": "PB",
-    "service": "StatelessProgrammableSwitch"
-},
-{
-    "id":78,
-    "name": "Street Side Wall Switch",
-    "service_name": "PB",
-    "service": "StatelessProgrammableSwitch"
-},
-{
-    "id":75,
-    "name": "Master WC Wall Switch",
+    "name": "Dinning Room Wall Switch",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
 },
 {
     "id":81,
-    "name": "WC Wall Switch",
+    "name": "Dinning Room Entry Wall Switch",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "id":76,
+    "name": "Kitchen Wall Switch",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "id":84,
+    "name": "Hallway 0 Wall Switch",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "id":82,
+    "name": "Guest Room WC Wall Switch",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "id":75,
+    "name": "Guest Room Wall Switch",
+    "service_name": "PB",
+    "service": "StatelessProgrammableSwitch"
+},
+{
+    "id":79,
+    "name": "Social WC Wall Switch",
     "service_name": "PB",
     "service": "StatelessProgrammableSwitch"
 },
 {
 	"service_name": "Kitchen Lamp",
-	"name": "173",
+	"name": "172",
     "service": "Lightbulb"	
 },
 {
-	"service_name": "Living Room Lamp",
-	"name": "172",
+	"service_name": "Dinning Room Lamp",
+	"name": "169",
     "service": "Lightbulb"		
 },
 {
-	"service_name": "Hallway Lamp",
-	"name": "167",
+	"service_name": "Hallway 0 Lamp",
+	"name": "168",
     "service": "Lightbulb"	
 },
 {	
-	"service_name": "Master Bedroom Lamp",
+	"service_name": "Guest Bedroom Lamp",
 	"name": "170",
     "service": "Lightbulb"	
 },
 {	
-	"service_name": "Master Bedroom WC Lamp",
+	"service_name": "Guest Bedroom WC Lamp",
 	"name": "174",
     "service": "Lightbulb"
 },
 {
-	"service_name": "Pool Side Bedroom Lamp",
-	"name": "169",
-    "service": "Lightbulb"	
-},
-{
-	"service_name": "Street Bedroom Lamp",
+	"service_name": "Entry",
 	"name": "171",
     "service": "Lightbulb"		
 },
 {
-	"service_name": "WC Lamp",
-	"name": "168",
+	"service_name": "Social WC Lamp",
+	"name": "173",
     "service": "Lightbulb"		
 }
 ]

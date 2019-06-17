@@ -17,7 +17,8 @@
 #define BUTTON_2_Pin 9
 #define RELAY_1_Pin 12
 #define RELAY_2_Pin 5
-#define FullRunSecs 30;
+#define FullRunMillSecs 26000
+#define STATUS_LED_PIN 13
 
 const char* mqtt_server = "192.168.1.109";
 uint16_t i;
@@ -53,11 +54,8 @@ unsigned long elapsedTime = 0;
 const unsigned long DebounceInterval = 250UL;
 static unsigned long lastButtonPress = 0 - DebounceInterval;  // initialize such that a reading is due the first time through loop()
 
-
 String chipId;
-
 String jsonReachabilityString;
-
 
 WiFiClient wclient;
 PubSubClient client(wclient);
@@ -68,14 +66,16 @@ void setup() {
 
   pinMode(RELAY_1_Pin, OUTPUT);
   pinMode(RELAY_2_Pin, OUTPUT);
+  pinMode(STATUS_LED_PIN, OUTPUT);
 
   pinMode(BUTTON_1_Pin, INPUT);
   pinMode(BUTTON_2_Pin, INPUT);
-
-
+  
 
   digitalWrite(RELAY_1_Pin, 0);
   digitalWrite(RELAY_2_Pin, 0);
+  digitalWrite(STATUS_LED_PIN, 1);
+  
 
   StaticJsonBuffer<200> jsonReachabilityBuffer;
 
@@ -92,7 +92,7 @@ void setup() {
   //reset saved settings
   //wifiManager.resetSettings();
   wifiManager.autoConnect(chipId.c_str());
-
+  
   ArduinoOTA.setPort(8266);
   ArduinoOTA.setHostname(chipId.c_str());
   // No authentication by default
@@ -115,14 +115,12 @@ void setup() {
     else if (error == OTA_END_ERROR) Serial.println("End Failed");
   });
   ArduinoOTA.begin();
-
   client.setServer(mqtt_server, 1883);
-
 }
 
 void loop() {
   ArduinoOTA.handle();
-  if (WiFi.status() == WL_CONNECTED) {
+  if (WiFi.status() == WL_CONNECTED) {    
     if (!client.connected()) {
       if (client.connect(chipId.c_str(), mqttuser, mqttpass, reachabilitytopic, 0, false, jsonReachabilityString.c_str())) {
         client.setCallback(callback);
@@ -133,17 +131,19 @@ void loop() {
         setReachability();
         if (client.connected())
           Serial.println("connected to MQTT server");
+          digitalWrite(STATUS_LED_PIN, 0);
       } else {
         Serial.println("Could not connect to MQTT server");
-        delay(5000);
-      }
+        digitalWrite(STATUS_LED_PIN, 1);
+        delay(5000);        
+      }      
     }
 
     if (client.connected())
       client.loop();
-  } else {
-    ESP.reset();
-  }
+  } //else {
+    //ESP.reset();
+  //}
 
   unsigned long now = millis();
 
@@ -165,27 +165,24 @@ void loop() {
     getAccessory(chipId.c_str(), "WindowCovering", "TargetPosition");
   }
 
-  /* DebounceInterval = 100UL;
-    static unsigned long lastButtonPress */
-
   elapsedTime = now - lastSampleTime;
 
   if (elapsedTime >= MeasureInterval) {
     //update current Position
     lastSampleTime = now;
     if (PositionState == 0) {//going down
-      CurrentPosition -= (100 * elapsedTime / 27000);
+      CurrentPosition -= (100 * elapsedTime / FullRunMillSecs);
       if (CurrentPosition <= TargetPosition)
       {
-        CurrentPosition = (CurrentPosition < 0) ? 0 : CurrentPosition;
+        CurrentPosition = TargetPosition;
         SetPositionState(2);
       }
     }
     else if (PositionState == 1) {//going up
-      CurrentPosition += (100 * elapsedTime / 27000);
+      CurrentPosition += (100 * elapsedTime / FullRunMillSecs);
       if (CurrentPosition >= TargetPosition)
       {
-        CurrentPosition = (CurrentPosition > 100) ? 100 : CurrentPosition;
+        CurrentPosition = TargetPosition;
         SetPositionState(2);
       }
     }
@@ -244,7 +241,7 @@ void addAccessory() {
   addLightbulbAccessoryJson["reachable"] = true;
   String addLightbulbAccessoryJsonString;
   addLightbulbAccessoryJson.printTo(addLightbulbAccessoryJsonString);
-  Serial.println(addLightbulbAccessoryJsonString.c_str());
+  //Serial.println(addLightbulbAccessoryJsonString.c_str());
   if (client.publish(addtopic, addLightbulbAccessoryJsonString.c_str()))
     Serial.println("WindowCovering Service Added");
 
@@ -279,10 +276,11 @@ void setAccessory(const char * accessoryName, const char * accessoryCharacterist
 }
 
 void getAccessory(const char * accessoryName, const char * accessoryServiceName, const char * accessoryCharacteristic) {
-  Serial.print("Get -> ");
-  Serial.print(accessoryCharacteristic);
-  Serial.print(": ");
-
+//  Serial.print("Get -> ");
+//  Serial.print(accessoryCharacteristic);
+//  Serial.print(": ");
+//  Serial.println(accessoryCharacteristic);
+  
   StaticJsonBuffer<200> jsonLightbulbBuffer;
   JsonObject& Json = jsonLightbulbBuffer.createObject();
 
@@ -302,7 +300,7 @@ void getAccessory(const char * accessoryName, const char * accessoryServiceName,
 
   String UpdateJson;
   Json.printTo(UpdateJson);
-  Serial.println(UpdateJson);
+  //Serial.println(UpdateJson);
   client.publish(outtopic, UpdateJson.c_str());
 
 }
