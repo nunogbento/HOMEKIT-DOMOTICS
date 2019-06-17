@@ -226,3 +226,12 @@ ModelManifest.xml
 *.stackdump
 src/Marlo.Hermes.GoExpress.ASMService.Setup/Marlo.Hermes.GoExpress.ASMService.Setup/_isconfig.xml
 
+mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.zip
+mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.sts
+mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.stc
+mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.sol
+mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.plc
+mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.gpi
+mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.dri
+mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.drd
+mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.cmp
