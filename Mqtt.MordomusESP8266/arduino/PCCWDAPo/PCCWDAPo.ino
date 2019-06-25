@@ -17,17 +17,20 @@
 #include <time.h>
 
 #define WHITE_LedPin 16
+#define PA_Interrupt_Pin 12
+#define PB_Interrupt_Pin 13
 
 #define CONFIG_FILE       "/accessories.conf"
 #define LIGHT 1
 #define PUSHBTN 2
 #define IRSENSOR 3
 #define LEAKSENSOR 4
+#define VALVE 5
 
 byte preamble = 0xAA;
 byte oncmd = 0x64;
 byte offcmd = 0x01;
-
+volatile boolean awakenByInterrupt = false;
 bool isPCCWDConnected = false;
 
 byte pingPccwdBytes[] = {0x57, 0x01, 0x64};
@@ -70,12 +73,12 @@ const char* maintmessage = "";
 String chipId;
 String jsonReachabilityString;
 
-const unsigned long pingInterval =  1000UL;
+const unsigned long pingInterval =  3000UL;
 
 static unsigned long lastPingTime = 0 - pingInterval;
 
 RingBufCPP<byte, 200> SerialBuf;
-
+Adafruit_MCP23017 mcp;
 ESP8266WebServer webSrv(80);
 
 WiFiClient wclient;
@@ -171,10 +174,11 @@ void handleAddAccessory() {
   byte data = 0;
   if (webSrv.args() == 3)
     data = (byte)webSrv.arg("data").toInt();
-  PccwdAccessories[address][0] = type;
-  PccwdAccessories[address][1] = data;
-  StoreConfiguration();
+
   if (addAccessory(type, address)) {
+    PccwdAccessories[address][0] = type;
+    PccwdAccessories[address][1] = data;
+    StoreConfiguration();
     sprintf(chunk, "Added device type: %d address: %d", type, address);
     Log(chunk);
     webSrv.send(200, "text/plain", chunk);
@@ -188,10 +192,11 @@ void handleAddAccessory() {
 void handleRemoveAccessory() {
   if (webSrv.args() != 1) return webSrv.send(500, "text/plain", "BAD ARGS");
   byte address = (byte)webSrv.arg("address").toInt();
-  PccwdAccessories[address][0] = 0;
-  PccwdAccessories[address][1] = 0;
-  StoreConfiguration();
+  
   if (removeAccessory(address)) {
+    PccwdAccessories[address][0] = 0;
+    PccwdAccessories[address][1] = 0;
+    StoreConfiguration();
     sprintf(chunk, "Removed device at address: %d", address);
     Log(chunk);
     webSrv.send(200, "text/plain", chunk);
@@ -303,17 +308,33 @@ bool addAccessory(byte type, byte address) {
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "StatelessProgrammableSwitch";
   }
-  else if (type == IRSENSOR) {
+  else if (type == IRSENSOR && address <= 16 && address > 0) {
     String serviceName = String("Motion Sensor ") + address;
     addAccessoryJson["name"] = accessoryId.c_str();
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "MotionSensor";
+
+    mcp.pinMode(address - 1, INPUT);
+    mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall
+    // mcp.setupInterruptPin(address - 1, CHANGE);
   }
-  else if (type == LEAKSENSOR) {
+  else if (type == LEAKSENSOR && address <= 16 && address > 0) {
     String serviceName = String("Leak Sensor ") + address;
     addAccessoryJson["name"] = accessoryId.c_str();
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "LeakSensor";
+
+    mcp.pinMode(address - 1, INPUT);
+    mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall
+    // mcp.setupInterruptPin(address - 1, CHANGE);
+  } 
+  else if (type == VALVE && address <= 16 && address > 0) {
+    String serviceName = String("Valve ") + address;
+    addAccessoryJson["name"] = accessoryId.c_str();
+    addAccessoryJson["service_name"] = serviceName;
+    addAccessoryJson["service"] = "Valve";
+    addAccessoryJson["ValveType"] = 0;    
+    mcp.pinMode(address - 1, OUTPUT);
   }
   String addAccessoryJsonString;
   serializeJson(addAccessoryJson, addAccessoryJsonString);
@@ -369,6 +390,12 @@ bool getAccessory(const char * accessoryName, const char * accessoryServiceName,
   else if (accessoryCharacteristic == std::string("LeakDetected")) {
     Json["value"] = (PccwdAccessories[address][1] == 1);
   }
+  else if (accessoryCharacteristic == std::string("Active")) {
+    Json["value"] = (PccwdAccessories[address][1]);
+  }
+  else if (accessoryCharacteristic == std::string("InUse")) {
+    Json["value"] = (PccwdAccessories[address][1]);
+  }
 
 
   String UpdateJsonString;
@@ -415,6 +442,11 @@ void callback(char* topic, byte* payload, unsigned int length) {
         int accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
         analogWrite(WHITE_LedPin , map(PccwdAccessories[address][1], 0, 100, 0, 255) );
+      } else if (accessoryCharacteristic == std::string("Active")) {
+        int accessoryValue = mqttAccessory["value"];
+        PccwdAccessories[address][1] = accessoryValue;
+        mcp.digitalWrite(address-1,accessoryValue);
+        getAccessory(accessoryName, accessoryServiceName, "InUse");
       }
     }
   }
@@ -428,13 +460,41 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 
 
+void HadleIO() {
+  for (int i = 0; i < 16; i += 1) {
+    int address = i + 1;
+    String accessoryId = chipId + "_" + address;
+    if (PccwdAccessories[address][0] == IRSENSOR) {
+      String serviceName = String("Motion Sensor ") + address;
+      int MotionDetected = mcp.digitalRead(i);
+      if (MotionDetected != PccwdAccessories[address][1])
+      {
+        PccwdAccessories[address][1] = MotionDetected;
+        getAccessory(accessoryId.c_str(), serviceName.c_str(), "MotionDetected");
+      }
 
-
+    } else if (PccwdAccessories[address][0] == LEAKSENSOR) {
+      String serviceName = String("Leak Sensor ") + address;
+      int LeakDetected = mcp.digitalRead(i);
+      if (LeakDetected != PccwdAccessories[address][1])
+      {
+        PccwdAccessories[address][1] = LeakDetected;
+        getAccessory(accessoryId.c_str(), serviceName.c_str(), "LeakDetected");
+      }
+    }
+  }
+}
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(14400);
 
   pinMode(WHITE_LedPin, OUTPUT);
+  pinMode(PA_Interrupt_Pin, INPUT);
+  pinMode(PB_Interrupt_Pin, INPUT);
+
+  mcp.begin();
+  //mcp.setupInterrupts(false, false, LOW);
+
 
   SPIFFS.begin();
 
@@ -534,6 +594,7 @@ void loop() {
             addAccessory(PccwdAccessories[i][0], i);
           }
         }
+        Log("Connected to MQTT Server");
       } else {
         delay(5000);
       }
@@ -601,7 +662,7 @@ void loop() {
     inputString = "";
   }
   //parse input string
-
+  HadleIO();
   webSrv.handleClient();
   logger.process();
 }
