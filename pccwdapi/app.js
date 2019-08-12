@@ -33,7 +33,7 @@ const SerialWriteQueue = setInterval(() => {  //BECAUSE PCWDD is realy slow...
 	if(self.SendQueue.length > 0){		
 		serialPort.write([self.SendQueue.shift()]);		
 	}
-  }, 100);
+  }, 300);
 
 function setStatus(key){	
 	switch (key.Id)

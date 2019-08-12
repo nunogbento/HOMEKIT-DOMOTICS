@@ -94,7 +94,8 @@ struct AppTrace
 // /apptrace/YYYYMMDD, keeping 1 day of history
 SPIFFSLogger<AppTrace> logger("/apptrace", 1);
 
-String inputString = "";
+byte SerialInput[10];
+int SerialInputIndex=0;
 
 void Log(char* text) {
   struct AppTrace data ;
@@ -106,16 +107,25 @@ void Log(char* text) {
 SPIFFSLogData<AppTrace> traceData[25];
 char chunk[300];
 
+void handleClearLog() {
+  if (webSrv.args() < 1) return webSrv.send(500, "text/plain", "BAD ARGS");
+  String filename = webSrv.arg("address");
+  if (SPIFFS.remove(filename))
+    webSrv.send( 200, "text/html", filename);
+  else
+    webSrv.send( 400, "text/html", chunk);
+}
+
 void handleLog() {
   const time_t now = time(nullptr);
   const size_t rowCount = logger.rowCount(now);
   size_t total = rowCount > 25 ? 25 : rowCount;
   webSrv.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  sprintf(chunk, "Log aT %d:\n Rows: %d\n", ctime(&now), rowCount);
+  sprintf(chunk, "Log aT %d: Rows: %d\r\n", ctime(&now), rowCount);
   webSrv.send( 200, "text/html", chunk);
-  size_t count = logger.readRows(traceData, now, rowCount - total, total);
-  for (int i = 0; i < count; i++) {
-    sprintf(chunk, "%s - %s \n",
+  size_t count = logger.readRows(traceData, now, rowCount - 1 - total, total);
+  for (int i = count - 1; i >= 0; i--) {
+    sprintf(chunk, "%s - %s \r\n",
             ctime(&traceData[i].timestampUTC),
             traceData[i].data.content);
     webSrv.sendContent(chunk);
@@ -192,7 +202,7 @@ void handleAddAccessory() {
 void handleRemoveAccessory() {
   if (webSrv.args() != 1) return webSrv.send(500, "text/plain", "BAD ARGS");
   byte address = (byte)webSrv.arg("address").toInt();
-  
+
   if (removeAccessory(address)) {
     PccwdAccessories[address][0] = 0;
     PccwdAccessories[address][1] = 0;
@@ -327,13 +337,13 @@ bool addAccessory(byte type, byte address) {
     mcp.pinMode(address - 1, INPUT);
     mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall
     // mcp.setupInterruptPin(address - 1, CHANGE);
-  } 
+  }
   else if (type == VALVE && address <= 16 && address > 0) {
     String serviceName = String("Valve ") + address;
     addAccessoryJson["name"] = accessoryId.c_str();
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "Valve";
-    addAccessoryJson["ValveType"] = 0;    
+    addAccessoryJson["ValveType"] = 0;
     mcp.pinMode(address - 1, OUTPUT);
   }
   String addAccessoryJsonString;
@@ -354,9 +364,13 @@ bool removeAccessory(byte address) {
 }
 
 bool ProgrammableSwitchEvent(const char * accessoryName, int presses) {
+  int idx = String(accessoryName).indexOf("_");
+  String addressStr = String(accessoryName).substring(idx + 1);
+  
+  
   StaticJsonDocument<200> Json;
   Json["name"] = accessoryName;
-  Json["service_name"] = "Switch";
+  Json["service_name"] = String("Switch ") + addressStr;
   Json["characteristic"] = "ProgrammableSwitchEvent";
   Json["value"] = presses;
   String UpdateJsonString;
@@ -445,7 +459,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
       } else if (accessoryCharacteristic == std::string("Active")) {
         int accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
-        mcp.digitalWrite(address-1,accessoryValue);
+        mcp.digitalWrite(address - 1, accessoryValue);
         getAccessory(accessoryName, accessoryServiceName, "InUse");
       }
     }
@@ -506,7 +520,7 @@ void setup() {
   serializeJson(jsonReachability, jsonReachabilityString);
 
 
-  inputString.reserve(200);
+  
 
   //wifi_conn();
   //WiFiManager
@@ -525,11 +539,11 @@ void setup() {
     Log("Start");
   });
   ArduinoOTA.onEnd([]() {
-    Log("\nEnd");
+    Log("End");
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    sprintf(chunk, "Progress: %u%%\r", (progress / (total / 100)));
-    Log(chunk);
+    //    sprintf(chunk, "Progress: %u%%", (progress / (total / 100)));
+    //    Log(chunk);
   });
   ArduinoOTA.onError([](ota_error_t error) {
     Serial.printf("Error[%u]: ", error);
@@ -552,6 +566,7 @@ void setup() {
   webSrv.on("/turnon", HTTP_GET, handleTurnOn);
   webSrv.on("/turnoff", HTTP_GET, handleTurnOff);
   webSrv.on("/log", HTTP_GET, handleLog);
+  webSrv.on("/clearlog", HTTP_GET, handleClearLog);
   webSrv.on("/accessories", HTTP_GET, handleAccessories);
 
   webSrv.on("/upload", HTTP_GET, []() {                 // if the client requests the upload page
@@ -609,7 +624,8 @@ void loop() {
   while (!SerialBuf.isEmpty()) {
     byte pulled;
     SerialBuf.pull(&pulled);
-    Serial.print(pulled);
+    Serial.write(pulled);
+    delay(2);
   }
 
   unsigned long now = millis();
@@ -617,20 +633,23 @@ void loop() {
   if (!isPCCWDConnected && (now - lastPingTime >= pingInterval)) {
     lastPingTime = now;
     for (int i = 0; i < sizeof pingPccwdBytes; i++) {
-      SerialBuf.add(pingPccwdBytes[i]);
+      SerialBuf.add(pingPccwdBytes[i]);     
     }
   }
 
 
   while (Serial.available()) {
     // get the new byte:
-    char inChar = (char)Serial.read();
+    byte inChar = Serial.read();
     // add it to the inputString:
-    inputString += inChar;
+    SerialInput[SerialInputIndex++]=inChar;    
     if (inChar == 0x46) {
-      //parse string and reset
-      if (inputString.charAt(0) == 0x49 && inputString.charAt(1) == 65533) {
-        if (inputString.charAt(2) == 0x01 && inputString.charAt(3) == 0x67) {
+      SerialInputIndex=0;
+      //parse string and reset      
+      sprintf(chunk, "pccwd inputString: %02x,%02x,%02x,%02x", SerialInput[0],SerialInput[1],SerialInput[2],SerialInput[3]);
+      Log(chunk);
+      if (SerialInput[0] == 0x49 && SerialInput[1]== 0xaa) {
+        if (SerialInput[2] == 0x01 && SerialInput[3] == 0x67) {
 
           Log("Initializing PCCWD");
           for (int i = 0; i < sizeof pingPccwdBytes; i++) {
@@ -642,24 +661,24 @@ void loop() {
           isPCCWDConnected = true;
           Log("PCCWD initialized");
         } else {
-          int address = inputString.charAt(2);
-          int presses = inputString.charAt(3) - 1;
+          int address = SerialInput[2];
+          int presses = SerialInput[3] - 1;
           sprintf(chunk, "Switch Event address: %d, Presses:%d", address, presses);
           Log(chunk);
           String accessoryId = chipId + "_" + address;
           byte bulbAddress = PccwdAccessories[address][1];
 
           if (bulbAddress > 0 && presses == 0) {
-            String bulbId = chipId + "_" + address;
+            String bulbId = chipId + "_" + bulbAddress;
+            String ServiceName=String("Lightbulb ")+bulbAddress;
             PccwdAccessories[bulbAddress] [1] = (PccwdAccessories[bulbAddress][1] == 0) ? 1 : 0;
-            getAccessory(bulbId.c_str(), "Lightbulb", "On");
+            getAccessory(bulbId.c_str(), ServiceName.c_str(), "On");
           }
           ProgrammableSwitchEvent(accessoryId.c_str(), presses);
 
         }
       }
     }
-    inputString = "";
   }
   //parse input string
   HadleIO();
