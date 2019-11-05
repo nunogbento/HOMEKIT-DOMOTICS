@@ -236,3 +236,5 @@ mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.dri
 mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.drd
 mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.cmp
 Mqtt.MordomusESP8266/HArdware/mordomusesp8266_2019-06-30.zip
+*.zip
+Mqtt.ESP8266PlantConputer/HArdware - Copy/PlantComputerEsp8266_2019-10-29/CAMOutputs/
