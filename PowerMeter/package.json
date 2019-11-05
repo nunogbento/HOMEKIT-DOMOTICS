@@ -1,0 +1,21 @@
+{
+    "name": "PowerMeter",
+    "version": "1.0.0",
+    "description": "PowerMeter",
+    "author": "Nuno Bento",
+    "license": "MIT",
+    "keywords": [
+        "API",
+        "PowerMeter"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git://https://github.com/nunogbento/HOMEKIT-DOMOTICS.git"
+    },
+    "bugs": {
+        "url": "https://github.com/nunogbento/HOMEKIT-DOMOTICS/issues"
+    },
+    "dependencies": {
+        "MODBUS-SERIAL": "^7.7.2"        
+    }
+}

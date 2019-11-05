@@ -55,7 +55,8 @@
 	{
       "platform": "Hue",
       "users": {
-        "001788FFFE2A641A": "GirwW3ZgibL8qfFFY3HOAP3Gop45t2HxlezLla6K"        
+        "001788FFFE2A641A": "GirwW3ZgibL8qfFFY3HOAP3Gop45t2HxlezLla6K",
+        "ECB5FAFFFE07BB0F": "9nwLruAmHwOmW9IqG6cgsXTgH-pgK0Y61bCTkeKA" 		
       },
           "lights": true,
 	  "sensors":true,
