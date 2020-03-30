@@ -12023,7 +12023,7 @@ Source: http://www.diodes.com/datasheets/ds23001.pdf</description>
 <part name="GND3" library="supply1" deviceset="GND" device=""/>
 <part name="SV1" library="con-lstb" library_urn="urn:adsk.eagle:library:162" deviceset="MA10-1" device="" package3d_urn="urn:adsk.eagle:package:8346/1"/>
 <part name="U$1" library="Feesta-partsu" deviceset="OPTO-RELAY-CPC1017N" device=""/>
-<part name="R3" library="resistor" library_urn="urn:adsk.eagle:library:348" deviceset="R-EU_" device="R0805" package3d_urn="urn:adsk.eagle:package:23553/2"/>
+<part name="R3" library="resistor" library_urn="urn:adsk.eagle:library:348" deviceset="R-EU_" device="R0805" package3d_urn="urn:adsk.eagle:package:23553/2" value="15k"/>
 <part name="Q1" library="transistor-small-signal" library_urn="urn:adsk.eagle:library:401" deviceset="BC337" device="" package3d_urn="urn:adsk.eagle:package:29732/3"/>
 <part name="Q2" library="transistor-small-signal" library_urn="urn:adsk.eagle:library:401" deviceset="BC337" device="" package3d_urn="urn:adsk.eagle:package:29732/3"/>
 <part name="R4" library="resistor" library_urn="urn:adsk.eagle:library:348" deviceset="R-EU_" device="R0805" package3d_urn="urn:adsk.eagle:package:23553/2" value="10K"/>
@@ -12355,9 +12355,9 @@ Source: http://www.diodes.com/datasheets/ds23001.pdf</description>
 <label x="10.16" y="-7.62" size="1.778" layer="95"/>
 </segment>
 <segment>
-<wire x1="50.8" y1="96.52" x2="43.18" y2="96.52" width="0.1524" layer="91"/>
-<label x="35.56" y="96.52" size="1.778" layer="95"/>
-<pinref part="SV1" gate="1" pin="4"/>
+<wire x1="50.8" y1="99.06" x2="43.18" y2="99.06" width="0.1524" layer="91"/>
+<label x="35.56" y="99.06" size="1.778" layer="95"/>
+<pinref part="SV1" gate="1" pin="3"/>
 </segment>
 </net>
 <net name="SDA" class="0">
@@ -12367,9 +12367,9 @@ Source: http://www.diodes.com/datasheets/ds23001.pdf</description>
 <label x="10.16" y="-10.16" size="1.778" layer="95"/>
 </segment>
 <segment>
-<wire x1="50.8" y1="99.06" x2="43.18" y2="99.06" width="0.1524" layer="91"/>
-<label x="35.56" y="99.06" size="1.778" layer="95"/>
-<pinref part="SV1" gate="1" pin="3"/>
+<wire x1="50.8" y1="96.52" x2="43.18" y2="96.52" width="0.1524" layer="91"/>
+<label x="35.56" y="96.52" size="1.778" layer="95"/>
+<pinref part="SV1" gate="1" pin="4"/>
 </segment>
 </net>
 <net name="PROG" class="0">
