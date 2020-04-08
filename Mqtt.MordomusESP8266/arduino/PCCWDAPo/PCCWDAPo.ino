@@ -391,7 +391,7 @@ bool getAccessory(const char * accessoryName, const char * accessoryServiceName,
   int idx = String(accessoryName).indexOf("_");
   String addressStr = String(accessoryName).substring(idx + 1);
   byte address = atoi(addressStr.c_str());
-  StaticJsonDocument<200> Json;
+  StaticJsonDocument<400> Json;
 
   Json["name"] = accessoryName;
   Json["service_name"] = accessoryServiceName;
@@ -416,10 +416,10 @@ bool getAccessory(const char * accessoryName, const char * accessoryServiceName,
     Json["value"] = PccwdAccessories[address][1];
   }
   else if (accessoryCharacteristic == std::string("SmokeDetected")) {
-    Json["value"] = PccwdAccessories[address][1];
+    Json["value"] = (PccwdAccessories[address][1] == 1) ? 0 : 1;
   }
   else if (accessoryCharacteristic == std::string("CarbonMonoxideDetected")) {
-    Json["value"] = PccwdAccessories[address][1] ;
+    Json["value"] = (PccwdAccessories[address][1] == 1) ? 0 : 1;
   }
 
   String UpdateJsonString;
@@ -436,7 +436,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
   message[length] = '\0';
 
-  StaticJsonDocument<200> mqttAccessory;
+  StaticJsonDocument<400> mqttAccessory;
 
   DeserializationError error =  deserializeJson(mqttAccessory, message);
   if (error)
@@ -450,22 +450,26 @@ void callback(char* topic, byte* payload, unsigned int length) {
       int idx = String(accessoryName).indexOf("_");
       String addressStr = String(accessoryName).substring(idx + 1);
       byte address = atoi(addressStr.c_str());
-      bool accessoryValue = mqttAccessory["value"];
-      
+     
       if (accessoryCharacteristic == std::string("On")) {
-        
-        PccwdAccessories[address][1] = accessoryValue ? ((address == 0) ? 100 : 1) : 0 ;
+        bool accessoryValue = mqttAccessory["value"];
+     
+          
         if (address != 0) {
+          PccwdAccessories[address][1] = (accessoryValue)?1:0 ;
           SerialBuf.add(preamble);
           SerialBuf.add(address);
           SerialBuf.add((accessoryValue) ? oncmd : offcmd);
         } else {
+          PccwdAccessories[address][1] = (accessoryValue)?PccwdAccessories[address][1]:0 ;
           analogWrite(WHITE_LedPin , map(PccwdAccessories[address][1], 0, 100, 0, 255) );
         }
-      } else if (accessoryCharacteristic == std::string("Brightness")) {      
+      } else if (accessoryCharacteristic == std::string("Brightness")) {    
+        byte accessoryValue = mqttAccessory["value"];      
         PccwdAccessories[address][1] = accessoryValue;
         analogWrite(WHITE_LedPin , map(accessoryValue, 0, 100, 0, 255) );
       } else if (accessoryCharacteristic == std::string("Active")) {       
+        byte accessoryValue = mqttAccessory["value"];      
         PccwdAccessories[address][1] = accessoryValue;
         mcp.digitalWrite(address - 1, accessoryValue);
         getAccessory(accessoryName, accessoryServiceName, "InUse");
