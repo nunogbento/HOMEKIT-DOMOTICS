@@ -4,8 +4,7 @@
 #include <Adafruit_ADS1015.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
-#include <RingBufCPP.h>
-#include <RingBufHelpers.h>
+
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
@@ -68,7 +67,7 @@ String chipId;
 String jsonReachabilityString;
 
 
-const unsigned long IOInterval =  5000UL;
+const unsigned long IOInterval =  30000UL;
 
 static unsigned long lastIOTime = 0 - IOInterval;
 
@@ -100,12 +99,23 @@ SPIFFSLogData<AppTrace> traceData[25];
 char chunk[300];
 
 void handleClearLog() {
-  if (webSrv.args() < 1) return webSrv.send(500, "text/plain", "BAD ARGS");
-  String filename = webSrv.arg("address");
-  if (SPIFFS.remove(filename))
-    webSrv.send( 200, "text/html", filename);
-  else
+  char  filename[40];
+  time_t today = time(nullptr) / 86400 * 86400; // remove the time part
+  struct tm *tinfo = gmtime(&today);
+  sprintf_P(filename,
+            "%s/%d%02d%02d",
+            "/apptrace",
+            1900 + tinfo->tm_year,
+            tinfo->tm_mon + 1,
+            tinfo->tm_mday);
+
+  if (SPIFFS.remove(filename)) {
+    sprintf(chunk, "Removed Log File at: %s", filename);
+    webSrv.send( 200, "text/html", chunk);
+  } else {
+    sprintf(chunk, "Failed to Remove Log File at: %s", filename);
     webSrv.send( 400, "text/html", chunk);
+  }
 }
 
 void handleLog() {
@@ -132,7 +142,7 @@ void handleAccessories() {
   webSrv.send( 200, "text/html", "Accessories: \n");
   for (int i = 0; i < 4; i++) {
     if (PccwdAccessories[i][A_S] > 0) {
-      sprintf(chunk, "Address: %d --> Ststus: %d, HT: %d, Active: %d, CH: %d \n", i, PccwdAccessories[i][A_S], PccwdAccessories[i][A_D_HT], PccwdAccessories[i][A_D_A], PccwdAccessories[i][A_D_CH]);
+      sprintf(chunk, "Address: %d --> Status: %d, HT: %d, Active: %d, CH: %d \n", i, PccwdAccessories[i][A_S], PccwdAccessories[i][A_D_HT], PccwdAccessories[i][A_D_A], PccwdAccessories[i][A_D_CH]);
       webSrv.sendContent(chunk);
     }
   }
@@ -410,7 +420,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 void HadleIO() {
   for (int address = 0; address < 4; address++) {
-   
+    if(PccwdAccessories[address][A_S]==A_S_NOTINUSE)
+      continue;
     String accessoryId = chipId + "_" + address;
     String serviceName = String("IrrigationSystem ") + address;
 
@@ -418,7 +429,7 @@ void HadleIO() {
     //READ HUMIDITY FROM SENSOR
     int16_t ar = ads.readADC_SingleEnded(address);
     //map reading to percentage
-    int CH = map(ar, 25600, 8000, 0, 100);
+    int CH = map(ar, 25600, 6000, 0, 100);
     PccwdAccessories[address][A_D_CH] = CH;
     getAccessory(accessoryId.c_str(), "Humidity Sensor", "CurrentRelativeHumidity");
     if (PccwdAccessories[address][A_S] == A_S_AUTO) {

@@ -112,12 +112,23 @@ SPIFFSLogData<AppTrace> traceData[25];
 char chunk[300];
 
 void handleClearLog() {
-  if (webSrv.args() < 1) return webSrv.send(500, "text/plain", "BAD ARGS");
-  String filename = webSrv.arg("address");
-  if (SPIFFS.remove(filename))
-    webSrv.send( 200, "text/html", filename);
-  else
+  char  filename[40];
+  time_t today = time(nullptr) / 86400 * 86400; // remove the time part
+  struct tm *tinfo = gmtime(&today);
+  sprintf_P(filename,
+            "%s/%d%02d%02d",
+            "/apptrace",
+            1900 + tinfo->tm_year,
+            tinfo->tm_mon + 1,
+            tinfo->tm_mday);
+
+  if (SPIFFS.remove(filename)) {
+    sprintf(chunk, "Removed Log File at: %s", filename);
+    webSrv.send( 200, "text/html", chunk);
+  } else {
+    sprintf(chunk, "Failed to Remove Log File at: %s", filename);
     webSrv.send( 400, "text/html", chunk);
+  }
 }
 
 void handleLog() {
@@ -138,7 +149,6 @@ void handleLog() {
 
 void handleAccessories() {
   webSrv.setContentLength(CONTENT_LENGTH_UNKNOWN);
-
   webSrv.send( 200, "text/html", "Accessories: \n");
   for (int i = 0; i < 200; i += 1) {
     if (PccwdAccessories[i][0] > 0) {
@@ -146,8 +156,15 @@ void handleAccessories() {
       webSrv.sendContent(chunk);
     }
   }
+}
 
 
+void handleResetAccessories() {
+  for (int i = 0; i < 200; i += 1) {
+    PccwdAccessories[i][0] = 0;
+    PccwdAccessories[i][1] = 0;
+  }
+  webSrv.send( 200, "text/html", "Accessories Reset");
 }
 
 
@@ -160,9 +177,7 @@ void StoreConfiguration() {
 }
 
 void LoadConfiguration() {
-
   File configFile = SPIFFS.open(CONFIG_FILE, "r");
-
   if (configFile) {
     char statusBuffer[25];
     Log("Loading configuration:");
@@ -173,7 +188,6 @@ void LoadConfiguration() {
     }
     configFile.close();
   }
-
 }
 
 void handleAddAccessory() {
@@ -261,8 +275,9 @@ String getContentType(String filename) { // convert the file extension to the MI
   return "text/plain";
 }
 
-bool handleFileRead(String path) { // send the right file to the client (if it exists)
-  Serial.println("handleFileRead: " + path);
+bool handleFileRead(String path) { // send the right file to the client (if it exists)  
+  sprintf(chunk, "handleFileRead:  %s", path.c_str());
+  Log(chunk);
   if (path.endsWith("/")) path += "index.html";          // If a folder is requested, send the index file
   String contentType = getContentType(path);             // Get the MIME type
 
@@ -273,16 +288,20 @@ bool handleFileRead(String path) { // send the right file to the client (if it e
 
     return true;
   }
-  Serial.println(String("\tFile Not Found: ") + path);   // If the file doesn't exist, return false
+  
+  sprintf(chunk, "File Not Found:  %s", path.c_str());
+  Log(chunk);
   return false;
 }
 
 void handleFileUpload() { // upload a new file to the SPIFFS
   HTTPUpload& upload = webSrv.upload();
+   String filename = upload.filename;
   if (upload.status == UPLOAD_FILE_START) {
     String filename = upload.filename;
     if (!filename.startsWith("/")) filename = "/" + filename;
-    Serial.print("handleFileUpload Name: "); Serial.println(filename);
+
+
     fsUploadFile = SPIFFS.open(filename, "w");            // Open the file for writing in SPIFFS (create if it doesn't exist)
     filename = String();
   } else if (upload.status == UPLOAD_FILE_WRITE) {
@@ -290,8 +309,9 @@ void handleFileUpload() { // upload a new file to the SPIFFS
       fsUploadFile.write(upload.buf, upload.currentSize); // Write the received bytes to the file
   } else if (upload.status == UPLOAD_FILE_END) {
     if (fsUploadFile) {                                   // If the file was successfully created
-      fsUploadFile.close();                               // Close the file again
-      Serial.print("handleFileUpload Size: "); Serial.println(upload.totalSize);
+      fsUploadFile.close();                              // Close the file again
+      sprintf(chunk, "handleFileUpload Name: %s  size:%d", upload.filename.c_str(), upload.totalSize);
+      Log(chunk);
       webSrv.sendHeader("Location", "/success.html");     // Redirect the client to the success page
       webSrv.send(303);
     } else {
@@ -305,7 +325,7 @@ bool addAccessory(byte type, byte address) {
   String accessoryId = chipId + "_" + address;
   addAccessoryJson["name"] = accessoryId.c_str();
   if (type == LIGHT) {
-    String serviceName = String("Lightbulb ") + address;    
+    String serviceName = String("Lightbulb ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "Lightbulb";
     if (address == 0)
@@ -317,39 +337,39 @@ bool addAccessory(byte type, byte address) {
     addAccessoryJson["service"] = "StatelessProgrammableSwitch";
   }
   else if (type == IRSENSOR && address <= 16 && address > 0) {
-    String serviceName = String("Motion Sensor ") + address;   
+    String serviceName = String("Motion Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "MotionSensor";
     mcp.pinMode(address - 1, INPUT);
-    mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall    
+    mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall
   }
   else if (type == LEAKSENSOR && address <= 16 && address > 0) {
-    String serviceName = String("Leak Sensor ") + address;   
+    String serviceName = String("Leak Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "LeakSensor";
     mcp.pinMode(address - 1, INPUT);
-    mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall    
+    mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall
   }
   else if (type == VALVE && address <= 16 && address > 0) {
-    String serviceName = String("Valve ") + address;  
+    String serviceName = String("Valve ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "Valve";
     addAccessoryJson["ValveType"] = 0;
     mcp.pinMode(address - 1, OUTPUT);
   }
   else if (type == SMOKESENSOR && address <= 16 && address > 0) {
-    String serviceName = String("Smoke Sensor ") + address;  
+    String serviceName = String("Smoke Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "SmokeSensor";
     mcp.pinMode(address - 1, INPUT);
     mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall
-    
+
   } else if (type == COSENSOR && address <= 16 && address > 0) {
-    String serviceName = String("CarbonMonoxide Sensor ") + address; 
+    String serviceName = String("CarbonMonoxide Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "CarbonMonoxideSensor";
     mcp.pinMode(address - 1, INPUT);
-    mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall    
+    mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall
   }
 
   String addAccessoryJsonString;
@@ -396,7 +416,7 @@ bool getAccessory(const char * accessoryName, const char * accessoryServiceName,
   Json["name"] = accessoryName;
   Json["service_name"] = accessoryServiceName;
   Json["characteristic"] = accessoryCharacteristic;
-  
+
   if (accessoryCharacteristic == std::string("On")) {
     Json["value"] = (PccwdAccessories[address][1] > 0);
   }
@@ -450,26 +470,24 @@ void callback(char* topic, byte* payload, unsigned int length) {
       int idx = String(accessoryName).indexOf("_");
       String addressStr = String(accessoryName).substring(idx + 1);
       byte address = atoi(addressStr.c_str());
-     
+
       if (accessoryCharacteristic == std::string("On")) {
         bool accessoryValue = mqttAccessory["value"];
-     
-          
         if (address != 0) {
-          PccwdAccessories[address][1] = (accessoryValue)?1:0 ;
+          PccwdAccessories[address][1] = (accessoryValue) ? 1 : 0 ;
           SerialBuf.add(preamble);
           SerialBuf.add(address);
           SerialBuf.add((accessoryValue) ? oncmd : offcmd);
         } else {
-          PccwdAccessories[address][1] = (accessoryValue)?PccwdAccessories[address][1]:0 ;
+          PccwdAccessories[address][1] = (accessoryValue) ? PccwdAccessories[address][1] : 0 ;
           analogWrite(WHITE_LedPin , map(PccwdAccessories[address][1], 0, 100, 0, 255) );
         }
-      } else if (accessoryCharacteristic == std::string("Brightness")) {    
-        byte accessoryValue = mqttAccessory["value"];      
+      } else if (accessoryCharacteristic == std::string("Brightness")) {
+        byte accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
         analogWrite(WHITE_LedPin , map(accessoryValue, 0, 100, 0, 255) );
-      } else if (accessoryCharacteristic == std::string("Active")) {       
-        byte accessoryValue = mqttAccessory["value"];      
+      } else if (accessoryCharacteristic == std::string("Active")) {
+        byte accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
         mcp.digitalWrite(address - 1, accessoryValue);
         getAccessory(accessoryName, accessoryServiceName, "InUse");
@@ -491,31 +509,31 @@ void HadleIO() {
     int address = i + 1;
     String accessoryId = chipId + "_" + address;
     String serviceName;
-   
-    int IOPinValue=mcp.digitalRead(i);
+
+    int IOPinValue = mcp.digitalRead(i);
     if (PccwdAccessories[address][0] == IRSENSOR) {
-      serviceName = String("Motion Sensor ") + address;     
+      serviceName = String("Motion Sensor ") + address;
       if (IOPinValue != PccwdAccessories[address][1])
       {
         PccwdAccessories[address][1] = IOPinValue;
         getAccessory(accessoryId.c_str(), serviceName.c_str(), "MotionDetected");
       }
     } else  if (PccwdAccessories[address][0] == SMOKESENSOR) {
-      serviceName = String("Smoke Sensor ") + address;    
+      serviceName = String("Smoke Sensor ") + address;
       if (IOPinValue != PccwdAccessories[address][1])
       {
         PccwdAccessories[address][1] = IOPinValue;
         getAccessory(accessoryId.c_str(), serviceName.c_str(), "SmokeDetected");
       }
     } else  if (PccwdAccessories[address][0] == COSENSOR) {
-      serviceName = String("CarbonMonoxide Sensor ") + address;     
+      serviceName = String("CarbonMonoxide Sensor ") + address;
       if (IOPinValue != PccwdAccessories[address][1])
       {
         PccwdAccessories[address][1] = IOPinValue;
         getAccessory(accessoryId.c_str(), serviceName.c_str(), "CarbonMonoxideDetected");
       }
     } else if (PccwdAccessories[address][0] == LEAKSENSOR) {
-      serviceName = String("Leak Sensor ") + address;    
+      serviceName = String("Leak Sensor ") + address;
       if (IOPinValue != PccwdAccessories[address][1])
       {
         PccwdAccessories[address][1] = IOPinValue;
@@ -533,9 +551,7 @@ void setup() {
   pinMode(PB_Interrupt_Pin, INPUT);
 
   mcp.begin();
-  //mcp.setupInterrupts(false, false, LOW);
-
-
+ 
   SPIFFS.begin();
 
   chipId = String(serviceType) + String(ESP.getChipId());
@@ -544,11 +560,7 @@ void setup() {
   jsonReachability["name"] = chipId.c_str();
   jsonReachability["reachable"] = false;
   serializeJson(jsonReachability, jsonReachabilityString);
-
-
-
-
-  //wifi_conn();
+  
   //WiFiManager
   //Local intialization. Once its business is done, there is no need to keep it around
   WiFiManager wifiManager;
@@ -589,6 +601,7 @@ void setup() {
   //SETUP HTTP
   webSrv.on("/add", HTTP_GET, handleAddAccessory);
   webSrv.on("/remove", HTTP_GET, handleRemoveAccessory);
+  webSrv.on("/reset", HTTP_GET, handleResetAccessories);  
   webSrv.on("/turnon", HTTP_GET, handleTurnOn);
   webSrv.on("/turnoff", HTTP_GET, handleTurnOff);
   webSrv.on("/log", HTTP_GET, handleLog);
@@ -636,12 +649,8 @@ void loop() {
           }
         }
         Log("Connected to MQTT Server");
-      } else {
-        delay(5000);
-      }
-    }
-
-    if (client.connected())
+      } 
+    }else
       client.loop();
   } else {
     ESP.reset();
@@ -706,13 +715,13 @@ void loop() {
       }
     }
   }
-  
+
   if (now - lastIOTime >= IOInterval) {
     lastIOTime = now;
     HadleIO();
   }
-  
-  
+
+
   webSrv.handleClient();
   logger.process();
 }
