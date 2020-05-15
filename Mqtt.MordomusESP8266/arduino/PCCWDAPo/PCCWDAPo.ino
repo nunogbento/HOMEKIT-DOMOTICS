@@ -33,6 +33,7 @@ byte preamble = 0xAA;
 byte oncmd = 0x64;
 byte offcmd = 0x01;
 volatile boolean awakenByInterrupt = false;
+volatile boolean PinChangedAnalog = false;
 bool isPCCWDConnected = false;
 
 byte pingPccwdBytes[] = {0x57, 0x01, 0x64};
@@ -275,7 +276,7 @@ String getContentType(String filename) { // convert the file extension to the MI
   return "text/plain";
 }
 
-bool handleFileRead(String path) { // send the right file to the client (if it exists)  
+bool handleFileRead(String path) { // send the right file to the client (if it exists)
   sprintf(chunk, "handleFileRead:  %s", path.c_str());
   Log(chunk);
   if (path.endsWith("/")) path += "index.html";          // If a folder is requested, send the index file
@@ -288,7 +289,7 @@ bool handleFileRead(String path) { // send the right file to the client (if it e
 
     return true;
   }
-  
+
   sprintf(chunk, "File Not Found:  %s", path.c_str());
   Log(chunk);
   return false;
@@ -296,7 +297,7 @@ bool handleFileRead(String path) { // send the right file to the client (if it e
 
 void handleFileUpload() { // upload a new file to the SPIFFS
   HTTPUpload& upload = webSrv.upload();
-   String filename = upload.filename;
+  String filename = upload.filename;
   if (upload.status == UPLOAD_FILE_START) {
     String filename = upload.filename;
     if (!filename.startsWith("/")) filename = "/" + filename;
@@ -479,13 +480,15 @@ void callback(char* topic, byte* payload, unsigned int length) {
           SerialBuf.add(address);
           SerialBuf.add((accessoryValue) ? oncmd : offcmd);
         } else {
-          PccwdAccessories[address][1] = (accessoryValue) ? PccwdAccessories[address][1] : 0 ;
-          analogWrite(WHITE_LedPin , map(PccwdAccessories[address][1], 0, 100, 0, 255) );
+          PccwdAccessories[address][1] = (accessoryValue) ? 100 : 0;
+          PinChangedAnalog = true;
+          // analogWrite(WHITE_LedPin , map( PccwdAccessories[address][1], 0, 100, 0, 255) );
         }
       } else if (accessoryCharacteristic == std::string("Brightness")) {
         byte accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
-        analogWrite(WHITE_LedPin , map(accessoryValue, 0, 100, 0, 255) );
+        PinChangedAnalog = true;
+        //analogWrite(WHITE_LedPin , map(accessoryValue, 0, 100, 0, 255) );
       } else if (accessoryCharacteristic == std::string("Active")) {
         byte accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
@@ -509,6 +512,11 @@ void HadleIO() {
     int address = i + 1;
     String accessoryId = chipId + "_" + address;
     String serviceName;
+
+    if (PccwdAccessories[i][0] == LIGHT && i == 0 && PinChangedAnalog) {
+      PinChangedAnalog = false;
+      analogWrite(WHITE_LedPin , map( PccwdAccessories[i][1], 0, 100, 0, 255) );
+    }
 
     int IOPinValue = mcp.digitalRead(i);
     if (PccwdAccessories[address][0] == IRSENSOR) {
@@ -551,7 +559,7 @@ void setup() {
   pinMode(PB_Interrupt_Pin, INPUT);
 
   mcp.begin();
- 
+
   SPIFFS.begin();
 
   chipId = String(serviceType) + String(ESP.getChipId());
@@ -560,7 +568,7 @@ void setup() {
   jsonReachability["name"] = chipId.c_str();
   jsonReachability["reachable"] = false;
   serializeJson(jsonReachability, jsonReachabilityString);
-  
+
   //WiFiManager
   //Local intialization. Once its business is done, there is no need to keep it around
   WiFiManager wifiManager;
@@ -601,7 +609,7 @@ void setup() {
   //SETUP HTTP
   webSrv.on("/add", HTTP_GET, handleAddAccessory);
   webSrv.on("/remove", HTTP_GET, handleRemoveAccessory);
-  webSrv.on("/reset", HTTP_GET, handleResetAccessories);  
+  webSrv.on("/reset", HTTP_GET, handleResetAccessories);
   webSrv.on("/turnon", HTTP_GET, handleTurnOn);
   webSrv.on("/turnoff", HTTP_GET, handleTurnOff);
   webSrv.on("/log", HTTP_GET, handleLog);
@@ -649,8 +657,8 @@ void loop() {
           }
         }
         Log("Connected to MQTT Server");
-      } 
-    }else
+      }
+    } else
       client.loop();
   } else {
     ESP.reset();
