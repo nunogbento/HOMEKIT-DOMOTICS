@@ -402,7 +402,7 @@ bool ProgrammableSwitchEvent(const char * accessoryName, int presses) {
   Json["value"] = presses;
   String UpdateJsonString;
   serializeJson(Json, UpdateJsonString);
-  Log((char*)UpdateJsonString.c_str());
+  //Log((char*)UpdateJsonString.c_str());
   return client.publish(outtopic, UpdateJsonString.c_str());
 
 }
@@ -445,7 +445,7 @@ bool getAccessory(const char * accessoryName, const char * accessoryServiceName,
 
   String UpdateJsonString;
   serializeJson(Json, UpdateJsonString);
-  Log((char*)UpdateJsonString.c_str());
+ //Log((char*)UpdateJsonString.c_str());
   return client.publish(outtopic, UpdateJsonString.c_str());
 
 }
@@ -482,13 +482,13 @@ void callback(char* topic, byte* payload, unsigned int length) {
         } else {
           PccwdAccessories[address][1] = (accessoryValue) ? 100 : 0;
           PinChangedAnalog = true;
-          // analogWrite(WHITE_LedPin , map( PccwdAccessories[address][1], 0, 100, 0, 255) );
+        
         }
       } else if (accessoryCharacteristic == std::string("Brightness")) {
         byte accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
         PinChangedAnalog = true;
-        //analogWrite(WHITE_LedPin , map(accessoryValue, 0, 100, 0, 255) );
+        
       } else if (accessoryCharacteristic == std::string("Active")) {
         byte accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
@@ -706,8 +706,8 @@ void loop() {
         } else {
           int address = SerialInput[2];
           int presses = SerialInput[3] - 1;
-          sprintf(chunk, "Switch Event address: %d, Presses:%d", address, presses);
-          Log(chunk);
+          //sprintf(chunk, "Switch Event address: %d, Presses:%d", address, presses);
+          //Log(chunk);
           String accessoryId = chipId + "_" + address;
           byte bulbAddress = PccwdAccessories[address][1];
 
@@ -726,10 +726,11 @@ void loop() {
 
   if (now - lastIOTime >= IOInterval) {
     lastIOTime = now;
-    HadleIO();
+    HadleIO(); 
+    logger.process();
   }
 
 
   webSrv.handleClient();
-  logger.process();
+ 
 }
