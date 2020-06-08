@@ -689,8 +689,8 @@ void loop() {
     if (inChar == 0x46) {
       SerialInputIndex = 0;
       //parse string and reset
-      sprintf(chunk, "pccwd inputString: %02x,%02x,%02x,%02x", SerialInput[0], SerialInput[1], SerialInput[2], SerialInput[3]);
-      Log(chunk);
+      //sprintf(chunk, "pccwd inputString: %02x,%02x,%02x,%02x", SerialInput[0], SerialInput[1], SerialInput[2], SerialInput[3]);
+      //Log(chunk);
       if (SerialInput[0] == 0x49 && SerialInput[1] == 0xaa) {
         if (SerialInput[2] == 0x01 && SerialInput[3] == 0x67) {
 
