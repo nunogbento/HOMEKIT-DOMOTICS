@@ -402,7 +402,7 @@ bool ProgrammableSwitchEvent(const char * accessoryName, int presses) {
   Json["value"] = presses;
   String UpdateJsonString;
   serializeJson(Json, UpdateJsonString);
-  Log((char*)UpdateJsonString.c_str());
+  //Log((char*)UpdateJsonString.c_str());
   return client.publish(outtopic, UpdateJsonString.c_str());
 
 }
@@ -442,10 +442,13 @@ bool getAccessory(const char * accessoryName, const char * accessoryServiceName,
   else if (accessoryCharacteristic == std::string("CarbonMonoxideDetected")) {
     Json["value"] = (PccwdAccessories[address][1] == 1) ? 0 : 1;
   }
+  else if (accessoryCharacteristic == std::string("FirmwareRevision")) {
+    Json["value"] = "0.6.2";
+  }
 
   String UpdateJsonString;
   serializeJson(Json, UpdateJsonString);
-  Log((char*)UpdateJsonString.c_str());
+  //Log((char*)UpdateJsonString.c_str());
   return client.publish(outtopic, UpdateJsonString.c_str());
 
 }
@@ -482,13 +485,12 @@ void callback(char* topic, byte* payload, unsigned int length) {
         } else {
           PccwdAccessories[address][1] = (accessoryValue) ? 100 : 0;
           PinChangedAnalog = true;
-          // analogWrite(WHITE_LedPin , map( PccwdAccessories[address][1], 0, 100, 0, 255) );
         }
       } else if (accessoryCharacteristic == std::string("Brightness")) {
         byte accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
         PinChangedAnalog = true;
-        //analogWrite(WHITE_LedPin , map(accessoryValue, 0, 100, 0, 255) );
+
       } else if (accessoryCharacteristic == std::string("Active")) {
         byte accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
@@ -689,8 +691,8 @@ void loop() {
     if (inChar == 0x46) {
       SerialInputIndex = 0;
       //parse string and reset
-      sprintf(chunk, "pccwd inputString: %02x,%02x,%02x,%02x", SerialInput[0], SerialInput[1], SerialInput[2], SerialInput[3]);
-      Log(chunk);
+      //sprintf(chunk, "pccwd inputString: %02x,%02x,%02x,%02x", SerialInput[0], SerialInput[1], SerialInput[2], SerialInput[3]);
+      //Log(chunk);
       if (SerialInput[0] == 0x49 && SerialInput[1] == 0xaa) {
         if (SerialInput[2] == 0x01 && SerialInput[3] == 0x67) {
 
@@ -706,8 +708,8 @@ void loop() {
         } else {
           int address = SerialInput[2];
           int presses = SerialInput[3] - 1;
-          sprintf(chunk, "Switch Event address: %d, Presses:%d", address, presses);
-          Log(chunk);
+          //sprintf(chunk, "Switch Event address: %d, Presses:%d", address, presses);
+          //Log(chunk);
           String accessoryId = chipId + "_" + address;
           byte bulbAddress = PccwdAccessories[address][1];
 
@@ -727,9 +729,10 @@ void loop() {
   if (now - lastIOTime >= IOInterval) {
     lastIOTime = now;
     HadleIO();
+    logger.process();
   }
 
 
   webSrv.handleClient();
-  logger.process();
+  
 }
