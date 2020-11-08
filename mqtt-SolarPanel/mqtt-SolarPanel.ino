@@ -229,7 +229,9 @@ void getAccessory(const char * accessoryName, const char * accessoryServiceName,
   else if (accessoryCharacteristic == std::string("TargetHeaterCoolerState")) {
     Json["value"] = 0;
   }
-
+  else if (accessoryCharacteristic == std::string("FirmwareRevision")) {
+    Json["value"] = "0.6.2";
+  }
 
   String UpdateJson;
 
