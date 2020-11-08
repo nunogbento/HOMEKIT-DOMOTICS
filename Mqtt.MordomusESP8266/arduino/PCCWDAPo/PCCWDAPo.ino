@@ -442,10 +442,13 @@ bool getAccessory(const char * accessoryName, const char * accessoryServiceName,
   else if (accessoryCharacteristic == std::string("CarbonMonoxideDetected")) {
     Json["value"] = (PccwdAccessories[address][1] == 1) ? 0 : 1;
   }
+  else if (accessoryCharacteristic == std::string("FirmwareRevision")) {
+    Json["value"] = "0.6.2";
+  }
 
   String UpdateJsonString;
   serializeJson(Json, UpdateJsonString);
- //Log((char*)UpdateJsonString.c_str());
+  //Log((char*)UpdateJsonString.c_str());
   return client.publish(outtopic, UpdateJsonString.c_str());
 
 }
@@ -482,13 +485,12 @@ void callback(char* topic, byte* payload, unsigned int length) {
         } else {
           PccwdAccessories[address][1] = (accessoryValue) ? 100 : 0;
           PinChangedAnalog = true;
-        
         }
       } else if (accessoryCharacteristic == std::string("Brightness")) {
         byte accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
         PinChangedAnalog = true;
-        
+
       } else if (accessoryCharacteristic == std::string("Active")) {
         byte accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
@@ -726,11 +728,11 @@ void loop() {
 
   if (now - lastIOTime >= IOInterval) {
     lastIOTime = now;
-    HadleIO(); 
+    HadleIO();
     logger.process();
   }
 
 
   webSrv.handleClient();
- 
+
 }
