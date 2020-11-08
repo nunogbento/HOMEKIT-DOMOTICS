@@ -246,7 +246,7 @@ void handleTurnOn() {
     SerialBuf.add(oncmd);
   }
   sprintf(chunk, "Turn on device at address: %d", address);
-  Log(chunk);
+  //Log(chunk);
   webSrv.send(200, "text/plain", "");
 }
 
@@ -263,7 +263,7 @@ void handleTurnOff() {
     SerialBuf.add(offcmd);
   }
   sprintf(chunk, "Turn off device at address: %d", address);
-  Log(chunk);
+  //Log(chunk);
   webSrv.send(200, "text/plain", "");
 }
 
