@@ -594,7 +594,7 @@ void setup() {
     //    Log(chunk);
   });
   ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
+   // Serial.printf("Error[%u]: ", error);
     if (error == OTA_AUTH_ERROR) Log("Auth Failed");
     else if (error == OTA_BEGIN_ERROR) Log("Begin Failed");
     else if (error == OTA_CONNECT_ERROR) Log("Connect Failed");

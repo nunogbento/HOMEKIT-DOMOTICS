@@ -53,7 +53,7 @@ const char* reachabilitytopic = "homebridge/to/set/reachability";
 
 const char* maintmessage = "";
 
-bool lightBulbOn;
+bool lightBulbOn=false;
 u_int lightBulbBrightness;
 u_int lightBulbHue;
 u_int lightBulbSaturation;
@@ -223,7 +223,7 @@ void loop() {
       Serial.println(measuredTemperature);
       Serial.print("Humidity: ");
       measuredHumidity = sensor.getHumidity();
-      getAccessory(chipIdAC.c_str(), "AC", "CurrentRelativeHumidity");
+    //  getAccessory(chipIdAC.c_str(), "AC", "CurrentRelativeHumidity");
       //getAccessory(chipId.c_str(), "Humidity Sensor", "CurrentRelativeHumidity");
       Serial.println(measuredHumidity);
     }
@@ -272,7 +272,7 @@ void addAccessory() {
   addLightbulbAccessoryJson["service_name"] = "Lightbulb";
   addLightbulbAccessoryJson["service"] = serviceType;
 
-  addLightbulbAccessoryJson["Brightness"] = lightBulbBrightness;
+//  addLightbulbAccessoryJson["Brightness"] = lightBulbBrightness;
 //  addLightbulbAccessoryJson["Hue"] = lightBulbHue;
 //  addLightbulbAccessoryJson["Saturation"] = lightBulbSaturation;
   String addLightbulbAccessoryJsonString;
@@ -292,9 +292,9 @@ void addAccessory() {
   String addHumidityJsonString;
 
   serializeJson(addHumidityServiceJson, addHumidityJsonString);
-  Serial.println(addHumidityJsonString.c_str());
-  if (client.publish(servicetopic, addHumidityJsonString.c_str()))
-    Serial.println("Humidity Service Added");
+ // Serial.println(addHumidityJsonString.c_str());
+ // if (client.publish(servicetopic, addHumidityJsonString.c_str()))
+ //   Serial.println("Humidity Service Added");
 
 
   //  StaticJsonDocument<500> addTemperatureServiceJson;
@@ -328,9 +328,9 @@ void addAccessory() {
   addThermostatJson["CurrentRelativeHumidity"] = measuredHumidity;
   String addThermostatJsonString;
   serializeJson(addThermostatJson, addThermostatJsonString);
-  Serial.println(addThermostatJsonString.c_str());
-  if (client.publish(addtopic, addThermostatJsonString.c_str()))
-    Serial.println("Thermostat Service Added");
+//  Serial.println(addThermostatJsonString.c_str());
+//  if (client.publish(addtopic, addThermostatJsonString.c_str()))
+//    Serial.println("Thermostat Service Added");
 
 
   StaticJsonDocument<500> addfanJson;
@@ -341,11 +341,11 @@ void addAccessory() {
   addfanJson["RotationSpeed"] = ac_flow / 2.0 * 100;
   String addfanJsonString;
 
-  serializeJson(addfanJson, addfanJsonString);
-  Serial.println(addfanJsonString.c_str());
-
-  if (client.publish(addtopic, addfanJsonString.c_str()))
-    Serial.println("fan Service Added");
+//  serializeJson(addfanJson, addfanJsonString);
+//  Serial.println(addfanJsonString.c_str());
+//
+//  if (client.publish(addtopic, addfanJsonString.c_str()))
+//    Serial.println("fan Service Added");
 
 
 
@@ -384,15 +384,18 @@ void getAccessory(const char * accessoryName, const char * accessoryServiceName,
   if (accessoryCharacteristic == std::string("On") && String(accessoryName) == chipId) {
     Json["value"] = lightBulbOn;
   }
-  else if (accessoryCharacteristic == std::string("Brightness") && String(accessoryName) == chipId) {
-    Json["value"] = lightBulbBrightness;
-  }
+//  else if (accessoryCharacteristic == std::string("Brightness") && String(accessoryName) == chipId) {
+//    Json["value"] = lightBulbBrightness;
+//  }
 //  else if (accessoryCharacteristic == std::string("Hue") && String(accessoryName) == chipId) {
 //    Json["value"] = lightBulbHue;
 //  }
 //  else if (accessoryCharacteristic == std::string("Saturation") && String(accessoryName) == chipId) {
 //    Json["value"] = lightBulbSaturation;
 //  }
+    else if (accessoryCharacteristic == std::string("FirmwareRevision")) {
+    Json["value"] = "0.6.2";
+  }
   else  if (accessoryCharacteristic == std::string("On") && String(accessoryName) == chipIdACFan) {
 
   }
@@ -469,10 +472,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
         lightBulbOn = (bool) mqttAccessory["value"];
         setRGBW();
       }
-      else if (accessoryCharacteristic == std::string("Brightness") && String(accessoryName) == chipId) {
-        lightBulbBrightness = (int) mqttAccessory["value"];
-        setRGBW();
-      }
+//      else if (accessoryCharacteristic == std::string("Brightness") && String(accessoryName) == chipId) {
+//        lightBulbBrightness = (int) mqttAccessory["value"];
+//        setRGBW();
+//      }
 //      else if (accessoryCharacteristic == std::string("Hue") && String(accessoryName) == chipId) {
 //        lightBulbHue = (int) mqttAccessory["value"];
 //        setRGBW();
@@ -648,25 +651,27 @@ void hsi2rgbw(float H, float S, float I, int* rgbw) {
 }
 
 void setRGBW() {
-  int LedPins[] = {0, 0, 0, 0};
-  if (lightBulbOn == true)
-    LedPins[3]= map(lightBulbBrightness,0,100,0,255);
+  //int LedPins[] = {0, 0, 0, 0};
+  //if (lightBulbOn == true)
+   digitalWrite(WHITE_LedPin, lightBulbOn? HIGH:LOW);
+    //LedPins[3]= map(lightBulbBrightness,0,100,0,255);
     //hsi2rgbw(lightBulbHue, lightBulbSaturation, lightBulbBrightness, LedPins);
 
   Serial.print("Setting LEDs: {");
+  Serial.print(lightBulbOn);
 //  Serial.print("r: ");
 //  Serial.print( LedPins[0]);
 //  Serial.print(" , g: ");
 //  Serial.print( LedPins[1]);
 //  Serial.print(" , b: ");
 //  Serial.print( LedPins[2]);
-  Serial.print(" , w: ");
-  Serial.print( LedPins[3]);
-  Serial.println("}");
+//  Serial.print(" , w: ");
+  //Serial.print( LedPins[3]);
+ // Serial.println("}");
 
 //  analogWrite(RED_LedPin, LedPins[0]);
 //  analogWrite(GREEN_LedPin, LedPins[1]);
 //  analogWrite(BLUE_LedPin, LedPins[2]);
-  analogWrite(WHITE_LedPin, LedPins[3]);
+//  analogWrite(WHITE_LedPin, LedPins[3]);
 
 }
