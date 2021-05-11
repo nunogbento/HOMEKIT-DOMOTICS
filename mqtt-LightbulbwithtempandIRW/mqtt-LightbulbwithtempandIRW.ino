@@ -272,7 +272,7 @@ void addAccessory() {
   addLightbulbAccessoryJson["service_name"] = "Lightbulb";
   addLightbulbAccessoryJson["service"] = serviceType;
 
-//  addLightbulbAccessoryJson["Brightness"] = lightBulbBrightness;
+  addLightbulbAccessoryJson["Brightness"] = lightBulbBrightness;
 //  addLightbulbAccessoryJson["Hue"] = lightBulbHue;
 //  addLightbulbAccessoryJson["Saturation"] = lightBulbSaturation;
   String addLightbulbAccessoryJsonString;
@@ -293,8 +293,8 @@ void addAccessory() {
 
   serializeJson(addHumidityServiceJson, addHumidityJsonString);
  // Serial.println(addHumidityJsonString.c_str());
- // if (client.publish(servicetopic, addHumidityJsonString.c_str()))
- //   Serial.println("Humidity Service Added");
+  if (client.publish(servicetopic, addHumidityJsonString.c_str()))
+   Serial.println("Humidity Service Added");
 
 
   //  StaticJsonDocument<500> addTemperatureServiceJson;
@@ -329,8 +329,8 @@ void addAccessory() {
   String addThermostatJsonString;
   serializeJson(addThermostatJson, addThermostatJsonString);
 //  Serial.println(addThermostatJsonString.c_str());
-//  if (client.publish(addtopic, addThermostatJsonString.c_str()))
-//    Serial.println("Thermostat Service Added");
+  if (client.publish(addtopic, addThermostatJsonString.c_str()))
+    Serial.println("Thermostat Service Added");
 
 
   StaticJsonDocument<500> addfanJson;
@@ -341,11 +341,11 @@ void addAccessory() {
   addfanJson["RotationSpeed"] = ac_flow / 2.0 * 100;
   String addfanJsonString;
 
-//  serializeJson(addfanJson, addfanJsonString);
-//  Serial.println(addfanJsonString.c_str());
-//
-//  if (client.publish(addtopic, addfanJsonString.c_str()))
-//    Serial.println("fan Service Added");
+  serializeJson(addfanJson, addfanJsonString);
+  Serial.println(addfanJsonString.c_str());
+
+  if (client.publish(addtopic, addfanJsonString.c_str()))
+    Serial.println("fan Service Added");
 
 
 
@@ -384,9 +384,9 @@ void getAccessory(const char * accessoryName, const char * accessoryServiceName,
   if (accessoryCharacteristic == std::string("On") && String(accessoryName) == chipId) {
     Json["value"] = lightBulbOn;
   }
-//  else if (accessoryCharacteristic == std::string("Brightness") && String(accessoryName) == chipId) {
-//    Json["value"] = lightBulbBrightness;
-//  }
+  else if (accessoryCharacteristic == std::string("Brightness") && String(accessoryName) == chipId) {
+    Json["value"] = lightBulbBrightness;
+  }
 //  else if (accessoryCharacteristic == std::string("Hue") && String(accessoryName) == chipId) {
 //    Json["value"] = lightBulbHue;
 //  }
@@ -401,6 +401,9 @@ void getAccessory(const char * accessoryName, const char * accessoryServiceName,
   }
   else if (accessoryCharacteristic == std::string("CurrentTemperature")) {
     Json["value"] = measuredTemperature;
+  }
+   else if (accessoryCharacteristic == std::string("Active")) {
+    Json["value"] = ac_power_on?1:0;
   }
   else if (accessoryCharacteristic == std::string("CurrentRelativeHumidity")) {
     Json["value"] = measuredHumidity;
@@ -417,6 +420,9 @@ void getAccessory(const char * accessoryName, const char * accessoryServiceName,
     else {
       Json["value"] = 1;
     }
+  }
+  else if (accessoryCharacteristic == std::string("Active")) {
+    Json["value"] = ac_power_on?1:0;
   }
   else if (accessoryCharacteristic == std::string("TargetTemperature")) {
     Json["value"] = ac_temperature;
@@ -472,10 +478,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
         lightBulbOn = (bool) mqttAccessory["value"];
         setRGBW();
       }
-//      else if (accessoryCharacteristic == std::string("Brightness") && String(accessoryName) == chipId) {
-//        lightBulbBrightness = (int) mqttAccessory["value"];
-//        setRGBW();
-//      }
+      else if (accessoryCharacteristic == std::string("Brightness") && String(accessoryName) == chipId) {
+        lightBulbBrightness = (int) mqttAccessory["value"];
+        setRGBW();
+      }
 //      else if (accessoryCharacteristic == std::string("Hue") && String(accessoryName) == chipId) {
 //        lightBulbHue = (int) mqttAccessory["value"];
 //        setRGBW();
@@ -653,7 +659,7 @@ void hsi2rgbw(float H, float S, float I, int* rgbw) {
 void setRGBW() {
   //int LedPins[] = {0, 0, 0, 0};
   //if (lightBulbOn == true)
-   digitalWrite(WHITE_LedPin, lightBulbOn? HIGH:LOW);
+   digitalWrite(WHITE_LedPin, lightBulbOn? map(lightBulbBrightness,0,100,0,255):LOW);
     //LedPins[3]= map(lightBulbBrightness,0,100,0,255);
     //hsi2rgbw(lightBulbHue, lightBulbSaturation, lightBulbBrightness, LedPins);
 

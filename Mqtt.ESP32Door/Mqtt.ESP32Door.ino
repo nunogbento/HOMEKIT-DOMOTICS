@@ -67,7 +67,7 @@ void setup() {
 
   StaticJsonDocument<200> jsonReachability;
   jsonReachability["name"] = chipId;
-  jsonReachability["reachable"] = false;
+  jsonReachability["reachable"] = true;
   serializeJson(jsonReachability, jsonReachabilityString);
 
 
@@ -106,7 +106,7 @@ void setup() {
 }
 
 void loop() {
-  ArduinoOTA.handle();
+  
   if (WiFi.status() == WL_CONNECTED) {
     if (!client.connected()) {
       if (client.connect(chipId, mqttuser, mqttpass, reachabilitytopic, 0, false, jsonReachabilityString.c_str())) {
@@ -114,8 +114,8 @@ void loop() {
         client.subscribe(intopic);
         client.subscribe(gettopic);
         //client.subscribe(mainttopic);
-        addAccessory();
-        setReachability();
+       // addAccessory();
+        //setReachability();
         if (client.connected())
           Serial.println("connected to MQTT server");
       } else {
@@ -130,11 +130,13 @@ void loop() {
       portEXIT_CRITICAL(&mux);
 
       if (doorbell1.pressed) {
-        if (ProgrammableSwitchEvent())
-          Serial.println("doorbell press sent to mqtt");
+        //if (
+          ProgrammableSwitchEvent();
+          //)
+          //Serial.println("doorbell press sent to mqtt");
         doorbell1.pressed = false;
 
-        //getAccessory(chipId, "Doorbell", "MotionDetected");
+        
 
       }
 
@@ -144,7 +146,7 @@ void loop() {
   else {
     ESP.restart();
   }
-
+  ArduinoOTA.handle();
 }
 
 void addAccessory() {
@@ -165,7 +167,7 @@ void setReachability() {
   jsonReachability["reachable"] = true;
   jsonReachabilityString = "";
   serializeJson(jsonReachability, jsonReachabilityString);
-  Serial.println(jsonReachabilityString);
+  
   client.publish(reachabilitytopic, jsonReachabilityString.c_str());
 }
 
@@ -176,10 +178,10 @@ bool getAccessory(const char * accessoryName, const char * accessoryServiceName,
   Json["service_name"] = accessoryServiceName;
   Json["characteristic"] = accessoryCharacteristic;
 
+  if (accessoryCharacteristic == std::string("FirmwareRevision")) {
+    Json["value"] = "0.6.2";
+  } 
 
-//  if (accessoryCharacteristic == std::string("ProgrammableSwitchEvent")) {
-//    Json["value"] = doorbell1.pressed ? 1 : 0;
-//  }
 
   String UpdateJson;
   serializeJson(Json, UpdateJson);
@@ -195,7 +197,7 @@ bool ProgrammableSwitchEvent() {
   Json["name"] = chipId;
   Json["service_name"] = "Doorbell";
   Json["characteristic"] = "ProgrammableSwitchEvent";
-  Json["value"] = 1;
+  Json["value"] = 0;
 
   String UpdateJson;
   serializeJson(Json, UpdateJson);
