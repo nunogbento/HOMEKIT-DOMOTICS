@@ -1,3 +1,5 @@
+#include <WiFiManager.h>
+
 /*
  * wifi_info.h
  *
@@ -14,21 +16,13 @@
 #include <WiFi.h>
 #endif
 
-const char *ssid = "MEO-AADB7D";
-const char *password = "49809012A8";
 
 void wifi_connect() {
-	WiFi.persistent(false);
-	WiFi.mode(WIFI_STA);
-	WiFi.setAutoReconnect(true);
-	WiFi.begin(ssid, password);
-	Serial.println("WiFi connecting...");
-	while (!WiFi.isConnected()) {
-		delay(100);
-		Serial.print(".");
-	}
-	Serial.print("\n");
-	Serial.printf("WiFi connected, IP: %s\n", WiFi.localIP().toString().c_str());
+	//Local intialization. Once its business is done, there is no need to keep it around  
+  WiFiManager wifiManager;
+  //reset saved settings
+  //wifiManager.resetSettings();
+  wifiManager.autoConnect(chipId);
 }
 
 #endif /* WIFI_INFO_H_ */
