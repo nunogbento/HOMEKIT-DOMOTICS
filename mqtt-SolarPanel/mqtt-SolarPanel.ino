@@ -176,7 +176,7 @@ void addAccessory() {
   StaticJsonDocument<800> addServiceJson;
   addServiceJson["name"] = chipId.c_str();
   addServiceJson["service_name"] = "SolarPanel";
-  addServiceJson["service"] = "HeaterCooler";
+  addServiceJson["service"] = "Thermostat";
   String addJsonString;
 
   serializeJson(addServiceJson, addJsonString);
@@ -227,7 +227,7 @@ void getAccessory(const char * accessoryName, const char * accessoryServiceName,
     Json["value"] = HeaterCoolerState;
   }
   else if (accessoryCharacteristic == std::string("TargetHeaterCoolerState")) {
-    Json["value"] = 0;
+    Json["value"] = 30;
   }
   else if (accessoryCharacteristic == std::string("FirmwareRevision")) {
     Json["value"] = "0.6.2";

@@ -54,7 +54,7 @@ const char* reachabilitytopic = "homebridge/to/set/reachability";
 const char* maintmessage = "";
 
 bool lightBulbOn;
-u_int lightBulbBrightness;
+u_int lightBulbBrightness=0;
 u_int lightBulbHue;
 u_int lightBulbSaturation;
 
@@ -187,14 +187,15 @@ void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     if (!client.connected()) {
       if (client.connect(chipId.c_str(), mqttuser, mqttpass, reachabilitytopic, 0, false, jsonReachabilityString.c_str())) {
+        if (client.connected())
+          Serial.println("connected to MQTT server");
         client.setCallback(callback);
         client.subscribe(intopic);
         client.subscribe(gettopic);
         //client.subscribe(mainttopic);
         addAccessory();
         setReachability();
-        if (client.connected())
-          Serial.println("connected to MQTT server");
+       
       } else {
         Serial.println("Could not connect to MQTT server");
         delay(5000);
@@ -265,14 +266,14 @@ void loop() {
 }
 
 void addAccessory() {
-  StaticJsonDocument<800> addLightbulbAccessoryJson;
+  StaticJsonDocument<900> addLightbulbAccessoryJson;
 
 
   addLightbulbAccessoryJson["name"] = chipId.c_str();
   addLightbulbAccessoryJson["service_name"] = "Lightbulb";
   addLightbulbAccessoryJson["service"] = serviceType;
 
-  addLightbulbAccessoryJson["Brightness"] = lightBulbBrightness;
+  addLightbulbAccessoryJson["Brightness"] = "default";
 //  addLightbulbAccessoryJson["Hue"] = lightBulbHue;
 //  addLightbulbAccessoryJson["Saturation"] = lightBulbSaturation;
   String addLightbulbAccessoryJsonString;
@@ -285,16 +286,16 @@ void addAccessory() {
 
   //{"name": "Master Sensor", "service_name": "humidity", "service": "HumiditySensor"}
 
-  StaticJsonDocument<500> addHumidityServiceJson;
-  addHumidityServiceJson["name"] = chipId.c_str();
-  addHumidityServiceJson["service_name"] = "Humidity Sensor";
-  addHumidityServiceJson["service"] = "HumiditySensor";
-  String addHumidityJsonString;
-
-  serializeJson(addHumidityServiceJson, addHumidityJsonString);
-  Serial.println(addHumidityJsonString.c_str());
-  if (client.publish(servicetopic, addHumidityJsonString.c_str()))
-    Serial.println("Humidity Service Added");
+//  StaticJsonDocument<500> addHumidityServiceJson;
+//  addHumidityServiceJson["name"] = chipId.c_str();
+//  addHumidityServiceJson["service_name"] = "Humidity Sensor";
+//  addHumidityServiceJson["service"] = "HumiditySensor";
+//  String addHumidityJsonString;
+//
+//  serializeJson(addHumidityServiceJson, addHumidityJsonString);
+//  Serial.println(addHumidityJsonString.c_str());
+//  if (client.publish(servicetopic, addHumidityJsonString.c_str()))
+//    Serial.println("Humidity Service Added");
 
 
   //  StaticJsonDocument<500> addTemperatureServiceJson;
@@ -325,7 +326,7 @@ void addAccessory() {
   addThermostatJson["name"] = chipIdAC.c_str();
   addThermostatJson["service"] = "Thermostat";
   addThermostatJson["service_name"] = "AC";
-  addThermostatJson["CurrentRelativeHumidity"] = measuredHumidity;
+  addThermostatJson["CurrentRelativeHumidity"] = "default";
   String addThermostatJsonString;
   serializeJson(addThermostatJson, addThermostatJsonString);
   Serial.println(addThermostatJsonString.c_str());
@@ -333,21 +334,33 @@ void addAccessory() {
     Serial.println("Thermostat Service Added");
 
 
-  StaticJsonDocument<500> addfanJson;
-  addfanJson["name"] = chipIdACFan.c_str();
+//  StaticJsonDocument<500> addfanJson;
+//  addfanJson["name"] = chipIdACFan.c_str();
+//  addfanJson["service"] = "Fanv2";
+//  addfanJson["service_name"] = "Fan";
+//  addfanJson["SwingMode"] = "0";
+//  addfanJson["RotationSpeed"] = "0";
+//  String addfanJsonString;
+//
+//  serializeJson(addfanJson, addfanJsonString);
+//  Serial.println(addfanJsonString.c_str());
+//
+//  if (client.publish(addtopic, addfanJsonString.c_str()))
+//    Serial.println("fan Service Added");
+
+ StaticJsonDocument<500> addfanJson;
+  addfanJson["name"] = chipIdAC.c_str();
   addfanJson["service"] = "Fanv2";
   addfanJson["service_name"] = "Fan";
-  addfanJson["SwingMode"] = ac_swing_mode;
-  addfanJson["RotationSpeed"] = ac_flow / 2.0 * 100;
+  addfanJson["SwingMode"] = "0";
+  addfanJson["RotationSpeed"] = "0";
   String addfanJsonString;
 
   serializeJson(addfanJson, addfanJsonString);
   Serial.println(addfanJsonString.c_str());
 
-  if (client.publish(addtopic, addfanJsonString.c_str()))
+  if (client.publish(servicetopic, addfanJsonString.c_str()))
     Serial.println("fan Service Added");
-
-
 
 }
 
@@ -393,6 +406,10 @@ void getAccessory(const char * accessoryName, const char * accessoryServiceName,
 //  else if (accessoryCharacteristic == std::string("Saturation") && String(accessoryName) == chipId) {
 //    Json["value"] = lightBulbSaturation;
 //  }
+
+  else if (accessoryCharacteristic == std::string("FirmwareRevision")) {
+    Json["value"] = "0.6.2";
+  }
   else  if (accessoryCharacteristic == std::string("On") && String(accessoryName) == chipIdACFan) {
 
   }
@@ -414,6 +431,9 @@ void getAccessory(const char * accessoryName, const char * accessoryServiceName,
     else {
       Json["value"] = 1;
     }
+  }
+   else if (accessoryCharacteristic == std::string("Active")) {
+    Json["value"] = ac_power_on?1:0;
   }
   else if (accessoryCharacteristic == std::string("TargetTemperature")) {
     Json["value"] = ac_temperature;

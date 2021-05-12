@@ -330,7 +330,7 @@ bool addAccessory(byte type, byte address) {
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "Lightbulb";
     if (address == 0)
-      addAccessoryJson["Brightness"] = PccwdAccessories[address][1];
+      addAccessoryJson["Brightness"] = "default";
   }
   else if (type == PUSHBTN) {
     String serviceName = String("Switch ") + address;
@@ -355,7 +355,7 @@ bool addAccessory(byte type, byte address) {
     String serviceName = String("Valve ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "Valve";
-    addAccessoryJson["ValveType"] = 0;
+    addAccessoryJson["ValveType"] = "default";
     mcp.pinMode(address - 1, OUTPUT);
   }
   else if (type == SMOKESENSOR && address <= 16 && address > 0) {
