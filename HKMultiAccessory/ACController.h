@@ -55,6 +55,10 @@ class ACController {
       sensorController.setCallback(_callback);
     }
 
+    void Loop() {
+      sensorController.Loop();
+    }
+
     void EnableSwing() {
       SwingMode = ENABLED;
       if (CurrentHeaterCoolerState != OFF)

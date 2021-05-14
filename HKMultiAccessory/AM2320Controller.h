@@ -15,11 +15,8 @@ class AM2320Controller {
 
     float currentTemperature = 0;
     float currentHumidity = 0;
-
-  public:
-    
-
     measurement_callback callback;
+  public:
 
     AM2320Controller(): sensor() {}
 

@@ -111,7 +111,7 @@ homekit_accessory_t *accessories[] = {
                              HOMEKIT_CHARACTERISTIC(IDENTIFY, my_accessory_identify),
                              NULL
     }),
-    HOMEKIT_SERVICE(HOMEKIT_SERVICE_HEATER_COOLER, .primary = true, .characteristics = (homekit_characteristic_t*[]) {
+    HOMEKIT_SERVICE(HEATER_COOLER, .primary = true, .characteristics = (homekit_characteristic_t*[]) {
       HOMEKIT_CHARACTERISTIC(NAME, "LG AC"),
                              &cha_active
                              , &cha_temperature
@@ -119,7 +119,7 @@ homekit_accessory_t *accessories[] = {
                              , &cha_target_state
                              , &cha_rotation_speed
                              , &cha_swing_mode
-                             NULL
+                             ,NULL
     }),
     HOMEKIT_SERVICE(HUMIDITY_SENSOR, .primary = true, .characteristics = (homekit_characteristic_t*[]) {
       HOMEKIT_CHARACTERISTIC(NAME, "Humidity"),

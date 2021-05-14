@@ -38,7 +38,7 @@ LedController LCA(RED_LedPin, GREEN_LedPin, BLUE_LedPin, WHITE_LedPin);
 
 
 #if defined(_TH_) && !defined(_AC_)
-AM2320Controller am2320Controller();
+AM2320Controller am2320Controller;
 #endif
 #if defined(_AC_)
 ACController acController(IR_LED_PIN);
@@ -82,7 +82,7 @@ void setup() {
 void loop() {
   ArduinoOTA.handle();
   my_homekit_loop();
-  
+
 }
 
 //==============================
@@ -148,32 +148,31 @@ void my_homekit_setup() {
 #endif
 
 #if defined(_TH_) && !defined(_AC_)
-  am2320Controller().setCallback([&](float t, float h) {
+  am2320Controller.setCallback([&](float t, float h) {
     cha_temperature.value.float_value = t;
     homekit_characteristic_notify(&cha_temperature, cha_temperature.value);
-
     cha_humidity.value.float_value = h;
     homekit_characteristic_notify(&cha_humidity, cha_humidity.value);
   });
-  am2320Controller().begin(SDA_PIN, SCL_PIN);
+  am2320Controller.begin(SDA_PIN, SCL_PIN);
 #endif
 #if defined(_AC_)
 
-  acController().setCallback([&](float t, float h) {
+  acController.setCallback([&](float t, float h) {
     cha_temperature.value.float_value = t;
     homekit_characteristic_notify(&cha_temperature, cha_temperature.value);
 
     cha_humidity.value.float_value = h;
     homekit_characteristic_notify(&cha_humidity, cha_humidity.value);
   });
-  acController().begin(SDA_PIN, SCL_PIN);
+  acController.begin(SDA_PIN, SCL_PIN);
   cha_target_state.setter = set_target_state;
-  cha_target_rotation_speed.setter = set_rotation_speed;
+  cha_rotation_speed.setter = set_rotation_speed;
   cha_swing_mode.setter = set_swing_mode;
 #endif
- 
+
   arduino_homekit_setup(&accessory_config);
- 
+
 }
 
 
@@ -188,10 +187,10 @@ void my_homekit_loop() {
           ESP.getFreeHeap(), arduino_homekit_connected_clients_count());
   }
 #if defined(_TH_) && !defined(_AC_)
-  am2320Controller().Loop();
+  am2320Controller.Loop();
 #endif
 #if defined(_AC_)
-  acController().Loop();
+  acController.Loop();
 #endif
 }
 
@@ -267,27 +266,28 @@ void set_brightB(const homekit_value_t v) {
 void set_target_state(const homekit_value_t v) {
 
   int state = v.int_value;
-  cha_set_target_state.value.int_value = state; //sync the value
-  acController.SetTargetState(state);
+  cha_target_state.value.int_value = state; //sync the value
+  acController.SetTargetState((ACState)state);
   //notify active state
+  cha_active.value.bool_value=(state > 0) ? true: false;
+  homekit_characteristic_notify(&cha_active, cha_active.value);
 
-  homekit_characteristic_notify(&cha_active, (state > 0) ? 1 : 0);
-
-  //notify current state
-  homekit_characteristic_notify(&cha_current_state, (state < 3) ? state : 2);
+  //notify current state 
+  cha_current_state.value.int_value = (state < 3) ? state : 2;
+  homekit_characteristic_notify(&cha_current_state, cha_current_state.value);
 }
 
 void set_rotation_speed(const homekit_value_t v) {
 
   int rotation_speed = v.int_value;
-  cha_set_rotation_speed.value.int_value = rotation_speed; //sync the value
+  cha_rotation_speed.value.int_value = rotation_speed; //sync the value
   acController.SetRotationSpeed(rotation_speed);
 }
 
 void set_swing_mode(const homekit_value_t v) {
 
   int swing_mode = v.int_value;
-  cha_set_swing_mode.value.int_value = swing_mode; //sync the value
+  cha_swing_mode.value.int_value = swing_mode; //sync the value
   if (swing_mode == 1)
     acController.EnableSwing();
   else
