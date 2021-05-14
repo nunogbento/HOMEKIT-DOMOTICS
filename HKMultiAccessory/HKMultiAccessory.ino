@@ -38,7 +38,7 @@ LedController LCA(RED_LedPin, GREEN_LedPin, BLUE_LedPin, WHITE_LedPin);
 
 
 #if defined(_TH_) && !defined(_AC_)
-AM2320Controller am2320Controller();
+AM2320Controller am2320Controller;
 #endif
 #if defined(_AC_)
 ACController acController(IR_LED_PIN);
@@ -148,25 +148,25 @@ void my_homekit_setup() {
 #endif
 
 #if defined(_TH_) && !defined(_AC_)
-  am2320Controller().setCallback([&](float t, float h) {
+  am2320Controller.setCallback([&](float t, float h) {
     cha_temperature.value.float_value = t;
     homekit_characteristic_notify(&cha_temperature, cha_temperature.value);
 
     cha_humidity.value.float_value = h;
     homekit_characteristic_notify(&cha_humidity, cha_humidity.value);
   });
-  am2320Controller().begin(SDA_PIN, SCL_PIN);
+  am2320Controller.begin(SDA_PIN, SCL_PIN);
 #endif
 #if defined(_AC_)
 
-  acController().setCallback([&](float t, float h) {
+  acController.setCallback([&](float t, float h) {
     cha_temperature.value.float_value = t;
     homekit_characteristic_notify(&cha_temperature, cha_temperature.value);
 
     cha_humidity.value.float_value = h;
     homekit_characteristic_notify(&cha_humidity, cha_humidity.value);
   });
-  acController().begin(SDA_PIN, SCL_PIN);
+  acController.begin(SDA_PIN, SCL_PIN);
   cha_target_state.setter = set_target_state;
   cha_target_rotation_speed.setter = set_rotation_speed;
   cha_swing_mode.setter = set_swing_mode;
@@ -188,10 +188,10 @@ void my_homekit_loop() {
           ESP.getFreeHeap(), arduino_homekit_connected_clients_count());
   }
 #if defined(_TH_) && !defined(_AC_)
-  am2320Controller().Loop();
+  am2320Controller.Loop();
 #endif
 #if defined(_AC_)
-  acController().Loop();
+  acController.Loop();
 #endif
 }
 
