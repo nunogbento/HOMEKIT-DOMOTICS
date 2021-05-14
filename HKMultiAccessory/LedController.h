@@ -38,7 +38,7 @@ public:
     R_pin=r_pin;
     G_pin=g_pin;
     B_pin=b_pin;    
-    
+   
     pinMode(R_pin,OUTPUT);
     pinMode(G_pin,OUTPUT);
     pinMode(B_pin,OUTPUT);

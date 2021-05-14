@@ -25,14 +25,14 @@ LedController LCA(L1PIN, false);
 #if defined(_DUAL_)
 LedController LCB(L2PIN, false);
 #endif
-#elif defined(_DIMMER_)
+#elif defined(_DIMMER_) && !(defined(_RGB_) || defined(_RGBW_))
 LedController LCA(L1PIN, true);
 #if defined(_DUAL_)
 LedController LCB(L2PIN, true);
 #endif
-#elif defined(_RGB_)
+#elif defined(_RGB_) && ! defined(_RGBW_)
 LedController LCA(RED_LedPin, GREEN_LedPin, BLUE_LedPin);
-#elif defined(_RGBW)
+#elif defined(_RGBW_)
 LedController LCA(RED_LedPin, GREEN_LedPin, BLUE_LedPin, WHITE_LedPin);
 #endif
 
