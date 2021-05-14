@@ -156,6 +156,7 @@ class ACController {
     }
 
     void Ac_Send_Code(uint32_t code) {
+      LOG_D("Code sent:%d",code);
       irsend.sendLG(code, 28);
     }
 };

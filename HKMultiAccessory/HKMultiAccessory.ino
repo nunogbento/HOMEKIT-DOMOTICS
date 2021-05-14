@@ -269,18 +269,20 @@ void set_target_state(const homekit_value_t v) {
   cha_target_state.value.int_value = state; //sync the value
   acController.SetTargetState((ACState)state);
   //notify active state
-  cha_active.value.bool_value=(state > 0) ? true: false;
+  cha_active.value.bool_value = (state > 0) ? true : false;
   homekit_characteristic_notify(&cha_active, cha_active.value);
-
-  //notify current state 
+  LOG_D("Active :%d", cha_active.value.bool_value);
+  //notify current state
   cha_current_state.value.int_value = (state < 3) ? state : 2;
   homekit_characteristic_notify(&cha_current_state, cha_current_state.value);
+  LOG_D("Current  State:%d", cha_current_state.value.int_value);
 }
 
 void set_rotation_speed(const homekit_value_t v) {
 
   int rotation_speed = v.int_value;
   cha_rotation_speed.value.int_value = rotation_speed; //sync the value
+  LOG_D("Rotation Speed In:%d", rotation_speed);
   acController.SetRotationSpeed(rotation_speed);
 }
 
@@ -288,9 +290,12 @@ void set_swing_mode(const homekit_value_t v) {
 
   int swing_mode = v.int_value;
   cha_swing_mode.value.int_value = swing_mode; //sync the value
-  if (swing_mode == 1)
+  if (swing_mode == 1) {
     acController.EnableSwing();
-  else
+    LOG_D("Swing enabled");
+  } else {
     acController.DisableSwing();
+    LOG_D("Swing DISABLED");
+  }
 }
 #endif
