@@ -4,10 +4,11 @@
 
 //#define _RGB_
 //#define _RGBW_
-//#define _DIMMER_
+#define _DIMMER_
 #define _DUAL_
 //#define _AC_
 //#define _TH_
+
 #define ACCESSORY_NAME "Multi Accessory"
 #define IR_LED_PIN 10
 

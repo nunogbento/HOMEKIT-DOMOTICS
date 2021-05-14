@@ -25,8 +25,7 @@ LedController LCA(L1PIN, false);
 #if defined(_DUAL_)
 LedController LCB(L2PIN, false);
 #endif
-#else
-#if defined(_DIMMER_)
+#elif defined(_DIMMER_)
 LedController LCA(L1PIN, true);
 #if defined(_DUAL_)
 LedController LCB(L2PIN, true);
@@ -36,7 +35,8 @@ LedController LCA(RED_LedPin, GREEN_LedPin, BLUE_LedPin);
 #elif defined(_RGBW)
 LedController LCA(RED_LedPin, GREEN_LedPin, BLUE_LedPin, WHITE_LedPin);
 #endif
-#endif
+
+
 #if defined(_TH_) && !defined(_AC_)
 AM2320Controller am2320Controller();
 #endif
@@ -82,7 +82,7 @@ void setup() {
 void loop() {
   ArduinoOTA.handle();
   my_homekit_loop();
-  //delay(10);
+  
 }
 
 //==============================
@@ -94,7 +94,6 @@ void loop() {
 
 extern "C" homekit_server_config_t accessory_config;
 extern "C" homekit_characteristic_t cha_on;
-extern "C" void updateLED();
 
 #if defined(_DIMMER_) || defined(_RGB_) || defined(_RGBW_)
 extern "C" homekit_characteristic_t cha_bright;
@@ -111,6 +110,7 @@ extern "C" homekit_characteristic_t cha_onB;
 extern "C" homekit_characteristic_t cha_brightB;
 #endif
 #endif
+
 #if defined(_TH_) && !defined(_AC_)
 extern "C" homekit_characteristic_t cha_temperature;
 extern "C" homekit_characteristic_t cha_humidity;
@@ -132,19 +132,21 @@ static uint32_t next_heap_millis = 0;
 
 void my_homekit_setup() {
   cha_on.setter = set_on;
-#if (defined(_DIMMER_) || defined(_RGB_) || defined(_RGBW_))
+#if defined(_DIMMER_) || defined(_RGB_) || defined(_RGBW_)
   cha_bright.setter = set_bright;
 #endif
 #if defined(_RGB_) || defined(_RGBW_)
   cha_sat.setter = set_sat;
   cha_hue.setter = set_hue;
 #endif
+
 #if defined(_DUAL_) && !(defined(_RGB_) || defined(_RGBW_))
   cha_onB.setter = set_onB;
 #if defined(_DIMMER_)
   cha_brightB.setter = set_brightB;
 #endif
 #endif
+
 #if defined(_TH_) && !defined(_AC_)
   am2320Controller().setCallback([&](float t, float h) {
     cha_temperature.value.float_value = t;
@@ -169,7 +171,9 @@ void my_homekit_setup() {
   cha_target_rotation_speed.setter = set_rotation_speed;
   cha_swing_mode.setter = set_swing_mode;
 #endif
+ 
   arduino_homekit_setup(&accessory_config);
+ 
 }
 
 
