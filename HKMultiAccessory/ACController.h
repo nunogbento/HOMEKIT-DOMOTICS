@@ -42,10 +42,11 @@ class ACController {
 
 
   public:
-    ACController(uint16_t irPin): irsend(irPin),sensorController() {
-
+    ACController(uint16_t irPin): irsend(irPin), sensorController() {
+      pinMode(irPin, OUTPUT);
     }
     void begin(int sda, int scl) {
+
       irsend.begin();
       sensorController.begin(sda, scl);
     }

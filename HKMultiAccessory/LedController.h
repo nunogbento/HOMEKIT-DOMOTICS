@@ -29,6 +29,7 @@ public:
   LedController(u_int w_pin,bool dimmable) {
     type=(dimmable)?DIMMABLELED:ONOFFLED;
     W_pin=w_pin;    
+    pinMode(W_pin,OUTPUT);
     Update();
   }
 
@@ -37,6 +38,10 @@ public:
     R_pin=r_pin;
     G_pin=g_pin;
     B_pin=b_pin;    
+    
+    pinMode(R_pin,OUTPUT);
+    pinMode(G_pin,OUTPUT);
+    pinMode(B_pin,OUTPUT);
   }
 
   LedController(u_int r_pin,u_int g_pin,u_int b_pin,u_int w_pin) {
@@ -45,10 +50,14 @@ public:
     G_pin=g_pin;
     B_pin=b_pin;
     W_pin=w_pin;
+    pinMode(W_pin,OUTPUT);
+    pinMode(R_pin,OUTPUT);
+    pinMode(G_pin,OUTPUT);
+    pinMode(B_pin,OUTPUT);
   }
 
   void TurnOn(){
-    is_on=false;
+    is_on=true;
     Update();
   }
   

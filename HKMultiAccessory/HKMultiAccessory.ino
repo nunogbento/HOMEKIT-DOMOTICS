@@ -82,7 +82,7 @@ void setup() {
 void loop() {
   ArduinoOTA.handle();
   my_homekit_loop();
-  delay(10);
+  //delay(10);
 }
 
 //==============================
@@ -246,6 +246,8 @@ void set_onB(const homekit_value_t v) {
     LOG_D("Led B Off");
   }
 }
+
+
 #if defined(_DIMMER_)
 void set_brightB(const homekit_value_t v) {
   LOG_D("LED B set_bright");
@@ -254,6 +256,8 @@ void set_brightB(const homekit_value_t v) {
   LCB.SetBrightness(bright);
 }
 #endif
+#endif
+
 
 #if defined(_AC_)
 void set_target_state(const homekit_value_t v) {
@@ -285,6 +289,4 @@ void set_swing_mode(const homekit_value_t v) {
   else
     acController.DisableSwing();
 }
-#endif
-
 #endif

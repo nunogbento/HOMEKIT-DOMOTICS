@@ -58,7 +58,7 @@ homekit_characteristic_t cha_humidity = HOMEKIT_CHARACTERISTIC_(CURRENT_RELATIVE
 homekit_accessory_t *accessories[] = {
   HOMEKIT_ACCESSORY(.id = 1, .category = homekit_accessory_category_lightbulb, .services = (homekit_service_t*[]) {
     HOMEKIT_SERVICE(ACCESSORY_INFORMATION, .characteristics = (homekit_characteristic_t*[]) {
-      HOMEKIT_CHARACTERISTIC(NAME, "dual lightbulb"),
+      HOMEKIT_CHARACTERISTIC(NAME, ACCESSORY_NAME),
       HOMEKIT_CHARACTERISTIC(MANUFACTURER, "nb"),
       HOMEKIT_CHARACTERISTIC(SERIAL_NUMBER, "0123456"),
       HOMEKIT_CHARACTERISTIC(MODEL, "ESP8266"),
@@ -84,8 +84,8 @@ homekit_accessory_t *accessories[] = {
       , &cha_nameB
 #if defined(_DIMMER_)
       , &cha_brightB
-    })
 #endif
+    })
 #endif
 #if defined(_TH_) && !defined(_AC_)
     , HOMEKIT_SERVICE(TEMPERATURE_SENSOR, .primary = true, .characteristics = (homekit_characteristic_t*[]) {

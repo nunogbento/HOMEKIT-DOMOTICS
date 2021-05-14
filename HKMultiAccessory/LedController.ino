@@ -23,6 +23,7 @@ void LedController::Update() {
       if (type == RGBLED )
         analogWrite(W_pin, rgb_colors[3]);
     } else {
+     // LOG_D("LED switch is_on:%d pi:%d ",is_on,W_pin);
     if (!is_on) //lamp - switch to off
       digitalWrite(W_pin, 0);
     else {
