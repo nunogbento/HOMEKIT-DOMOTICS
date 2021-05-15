@@ -86,7 +86,15 @@ void setup() {
   WiFiManager wifiManager;
   //reset saved settings
   //wifiManager.resetSettings();
-  wifiManager.autoConnect(chipId.c_str());
+   wifiManager.setConfigPortalTimeout(240); // auto close configportal after n seconds
+  if (!wifiManager.autoConnect(chipId.c_str())) 
+  {
+    Serial.println(F("Failed to connect. Reset and try again..."));
+    delay(3000);
+    //reset and try again
+    ESP.reset();
+    delay(5000);
+  }
 
   ArduinoOTA.setPort(8266);
   ArduinoOTA.setHostname(chipId.c_str());

@@ -10,7 +10,8 @@
 enum ACState {
   OFF = 0,
   HEATING = 1,
-  COOLING = 2
+  COOLING = 2,
+  AUTO=3
 };
 
 enum SwingModes {
@@ -21,15 +22,16 @@ enum SwingModes {
 class ACController {
     IRsend irsend;
     AM2320Controller sensorController;
-    float CurrentTemperature = 0;
-    float TargetTemperature = 0;
+    
+    float targetTemperature = 0;
 
-    ACState CurrentHeaterCoolerState = OFF;
+    ACState currentHeaterCoolerState = OFF;
+    ACState targetHeaterCoolerState = OFF;
 
     u_int RotationSpeed = 0;
     u_int Air_flow = 0;
 
-    SwingModes SwingMode = DISABLED;
+    SwingModes swingMode = DISABLED;
     // 0 : low
     // 1 : mid
     // 2 : high
@@ -42,11 +44,9 @@ class ACController {
 
 
   public:
-    ACController(uint16_t irPin): irsend(irPin), sensorController() {
-      pinMode(irPin, OUTPUT);
-    }
+    ACController(uint16_t irPin): irsend(irPin), sensorController() {}
+    
     void begin(int sda, int scl) {
-
       irsend.begin();
       sensorController.begin(sda, scl);
     }
@@ -60,14 +60,14 @@ class ACController {
     }
 
     void EnableSwing() {
-      SwingMode = ENABLED;
-      if (CurrentHeaterCoolerState != OFF)
+      swingMode = ENABLED;
+      if (currentHeaterCoolerState != OFF)
         Ac_Change_Air_Swing();
     }
 
     void DisableSwing() {
-      SwingMode = DISABLED;
-      if (CurrentHeaterCoolerState != OFF)
+      swingMode = DISABLED;
+      if (currentHeaterCoolerState != OFF)
         Ac_Change_Air_Swing();
     }
     void SetRotationSpeed(u_int rotationspeed) {
@@ -79,19 +79,29 @@ class ACController {
       else
         Air_flow = 2;
 
-      if (CurrentHeaterCoolerState != OFF)
+      if (currentHeaterCoolerState != OFF)
         Ac_Activate();
 
     }
+    
     void SetTargetTemperature(u_int temperature) {
-      TargetTemperature = temperature;
-      if (CurrentHeaterCoolerState != OFF)
+      targetTemperature = temperature;
+      if (currentHeaterCoolerState != OFF)
         Ac_Activate();
+    }
+
+    ACState CurrentHeaterCoolerState(){
+      return   currentHeaterCoolerState;
+    }
+
+    bool Active(){
+      return (currentHeaterCoolerState==OFF)?false:true;
     }
 
     void SetTargetState(ACState newstate) {
-      CurrentHeaterCoolerState = newstate;
-      switch (CurrentHeaterCoolerState) {
+      targetHeaterCoolerState = newstate;
+      currentHeaterCoolerState = (newstate<3)?newstate:((sensorController.CurrentTemperature()<15)?HEATING:COOLING);
+      switch (currentHeaterCoolerState) {
         case OFF:
           Ac_Power_Down();
           break;
@@ -99,6 +109,9 @@ class ACController {
           Ac_Activate();
           break;
         case COOLING:
+          Ac_Activate();
+          break;
+        case AUTO:
           Ac_Activate();
           break;
       };
@@ -111,11 +124,11 @@ class ACController {
       unsigned int ac_msbits2 = 8;
       unsigned int ac_msbits3 = 0;
       unsigned int ac_msbits4;
-      if (CurrentHeaterCoolerState == HEATING)
+      if (currentHeaterCoolerState == HEATING)
         ac_msbits4 = 4;  // heating
       else
         ac_msbits4 = 0;  // cooling
-      unsigned int ac_msbits5 =  (TargetTemperature < 15) ? 0 : TargetTemperature - 15;
+      unsigned int ac_msbits5 =  (targetTemperature < 15) ? 0 : targetTemperature - 15;
       unsigned int ac_msbits6;
 
       if (0 <= Air_flow && Air_flow <= 2) {
@@ -146,7 +159,7 @@ class ACController {
     }
 
     void Ac_Change_Air_Swing() {
-      if (SwingMode == ENABLED)
+      if (swingMode == ENABLED)
         ac_code_to_sent = 0x8813149;
       else
         ac_code_to_sent = 0x881315A;

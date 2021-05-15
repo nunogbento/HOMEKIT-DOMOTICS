@@ -48,10 +48,21 @@ void setup() {
   Serial.begin(115200);
   chipId = ACCESSORY_NAME + String(ESP.getChipId());
   //Local intialization. Once its business is done, there is no need to keep it around
-  WiFiManager wifiManager;
+  WiFiManager wifiManager; 
   //reset saved settings
   //wifiManager.resetSettings();
-  wifiManager.autoConnect(chipId.c_str());
+  wifiManager.setConfigPortalTimeout(240); // auto close configportal after n seconds
+  if (!wifiManager.autoConnect(chipId.c_str())) 
+  {
+    Serial.println(F("Failed to connect. Reset and try again..."));
+    delay(3000);
+    //reset and try again
+    ESP.reset();
+    delay(5000);
+  }
+ 
+ 
+
   //setup OTA
   ArduinoOTA.setPort(8266);
   ArduinoOTA.setHostname(chipId.c_str());
@@ -264,16 +275,15 @@ void set_brightB(const homekit_value_t v) {
 
 #if defined(_AC_)
 void set_target_state(const homekit_value_t v) {
-
   int state = v.int_value;
   cha_target_state.value.int_value = state; //sync the value
   acController.SetTargetState((ACState)state);
   //notify active state
-  cha_active.value.bool_value = (state > 0) ? true : false;
+  cha_active.value.bool_value = acController.Active();
   homekit_characteristic_notify(&cha_active, cha_active.value);
   LOG_D("Active :%d", cha_active.value.bool_value);
   //notify current state
-  cha_current_state.value.int_value = (state < 3) ? state : 2;
+  cha_current_state.value.int_value = (int)acController.CurrentHeaterCoolerState();;
   homekit_characteristic_notify(&cha_current_state, cha_current_state.value);
   LOG_D("Current  State:%d", cha_current_state.value.int_value);
 }
