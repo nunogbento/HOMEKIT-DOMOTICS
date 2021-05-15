@@ -47,9 +47,9 @@ class AM2320Controller {
         if (sensor.measure()) {
 
           currentTemperature = sensor.getTemperature();
-          LOG_D("Temperature: %d", currentTemperature);
+          LOG_D("Temperature: %f", currentTemperature);
           currentHumidity = sensor.getHumidity();
-          LOG_D("Humidity: %d", currentHumidity);
+          LOG_D("Humidity: %f", currentHumidity);
           if (callback)
             callback(currentTemperature, currentHumidity);
 

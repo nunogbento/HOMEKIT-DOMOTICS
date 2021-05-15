@@ -23,7 +23,7 @@ class ACController {
     IRsend irsend;
     AM2320Controller sensorController;
     
-    float targetTemperature = 0;
+    float targetTemperature = 22;
 
     ACState currentHeaterCoolerState = OFF;
     ACState targetHeaterCoolerState = OFF;
@@ -146,15 +146,14 @@ class ACController {
       ac_code_to_sent = (ac_code_to_sent + ac_msbits6) << 4;
       ac_code_to_sent = (ac_code_to_sent + ac_msbits7);
 
-      Ac_Send_Code(ac_code_to_sent);
-      LOG_D("set ac_acivate:%s", ac_code_to_sent);
-
+      irsend.sendLG(ac_code_to_sent, 28);
+      LOG_D("AC ACTIVATE code:%d TargetTemperature:%f, TargetState:%d, Flow:%d",ac_code_to_sent,targetTemperature,currentHeaterCoolerState,Air_flow);
     }
 
 
     void Ac_Power_Down() {
       ac_code_to_sent = 0x88C0051;
-      Ac_Send_Code(ac_code_to_sent);
+       irsend.sendLG(ac_code_to_sent, 28);
       LOG_D("sent AC off");
     }
 
@@ -163,15 +162,13 @@ class ACController {
         ac_code_to_sent = 0x8813149;
       else
         ac_code_to_sent = 0x881315A;
-      Ac_Send_Code(ac_code_to_sent);
-      LOG_D("sent AC Swing:%s ", ac_code_to_sent);
+      
+      irsend.sendLG(ac_code_to_sent, 28);
+      LOG_D("sent AC Swing:%d ", ac_code_to_sent);
 
     }
 
-    void Ac_Send_Code(uint32_t code) {
-      LOG_D("Code sent:%d",code);
-      irsend.sendLG(code, 28);
-    }
+
 };
 
 

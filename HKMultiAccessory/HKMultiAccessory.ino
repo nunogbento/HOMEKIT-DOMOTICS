@@ -14,10 +14,6 @@
 #include "ACController.h"
 #include "AM2320Controller.h"
 
-
-
-
-
 String chipId;
 
 #if !(defined(_DIMMER_) || defined(_RGB_) || defined(_RGBW_))
@@ -61,8 +57,6 @@ void setup() {
     delay(5000);
   }
  
- 
-
   //setup OTA
   ArduinoOTA.setPort(8266);
   ArduinoOTA.setHostname(chipId.c_str());
@@ -150,14 +144,12 @@ void my_homekit_setup() {
   cha_sat.setter = set_sat;
   cha_hue.setter = set_hue;
 #endif
-
 #if defined(_DUAL_) && !(defined(_RGB_) || defined(_RGBW_))
   cha_onB.setter = set_onB;
 #if defined(_DIMMER_)
   cha_brightB.setter = set_brightB;
 #endif
 #endif
-
 #if defined(_TH_) && !defined(_AC_)
   am2320Controller.setCallback([&](float t, float h) {
     cha_temperature.value.float_value = t;
@@ -168,7 +160,6 @@ void my_homekit_setup() {
   am2320Controller.begin(SDA_PIN, SCL_PIN);
 #endif
 #if defined(_AC_)
-
   acController.setCallback([&](float t, float h) {
     cha_temperature.value.float_value = t;
     homekit_characteristic_notify(&cha_temperature, cha_temperature.value);
@@ -181,9 +172,7 @@ void my_homekit_setup() {
   cha_rotation_speed.setter = set_rotation_speed;
   cha_swing_mode.setter = set_swing_mode;
 #endif
-
   arduino_homekit_setup(&accessory_config);
-
 }
 
 
@@ -251,7 +240,6 @@ void set_sat(const homekit_value_t v) {
 void set_onB(const homekit_value_t v) {
   bool on = v.bool_value;
   cha_onB.value.bool_value = on; //sync the value
-
   if (on) {
     LCB.TurnOn();
     LOG_D("Led B On");
@@ -275,37 +263,37 @@ void set_brightB(const homekit_value_t v) {
 
 #if defined(_AC_)
 void set_target_state(const homekit_value_t v) {
-  int state = v.int_value;
-  cha_target_state.value.int_value = state; //sync the value
+  uint8_t state = v.uint8_value;
+  cha_target_state.value.uint8_value = state; //sync the value
   acController.SetTargetState((ACState)state);
+  LOG_D("target  State:%i", state);
   //notify active state
   cha_active.value.bool_value = acController.Active();
   homekit_characteristic_notify(&cha_active, cha_active.value);
-  LOG_D("Active :%d", cha_active.value.bool_value);
+  LOG_D("Active :%i", cha_active.value.bool_value);
   //notify current state
-  cha_current_state.value.int_value = (int)acController.CurrentHeaterCoolerState();;
+  cha_current_state.value.uint8_value = (uint8_t)acController.CurrentHeaterCoolerState();;
   homekit_characteristic_notify(&cha_current_state, cha_current_state.value);
-  LOG_D("Current  State:%d", cha_current_state.value.int_value);
+  LOG_D("Current  State:%i", cha_current_state.value.uint8_value);
 }
 
 void set_rotation_speed(const homekit_value_t v) {
 
-  int rotation_speed = v.int_value;
-  cha_rotation_speed.value.int_value = rotation_speed; //sync the value
-  LOG_D("Rotation Speed In:%d", rotation_speed);
+  float rotation_speed = v.float_value;
+  cha_rotation_speed.value.float_value = rotation_speed; //sync the value
+  LOG_D("Rotation Speed In:%f", rotation_speed);
   acController.SetRotationSpeed(rotation_speed);
 }
 
 void set_swing_mode(const homekit_value_t v) {
 
-  int swing_mode = v.int_value;
-  cha_swing_mode.value.int_value = swing_mode; //sync the value
+  uint8_t swing_mode = v.uint8_value;
+  LOG_D("SwingMode:%i", swing_mode);
+  cha_swing_mode.value.uint8_value = swing_mode; //sync the value
   if (swing_mode == 1) {
     acController.EnableSwing();
-    LOG_D("Swing enabled");
   } else {
     acController.DisableSwing();
-    LOG_D("Swing DISABLED");
   }
 }
 #endif
