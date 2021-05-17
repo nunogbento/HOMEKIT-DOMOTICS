@@ -11,7 +11,7 @@ enum ACState {
   OFF = 0,
   HEATING = 1,
   COOLING = 2,
-  AUTO=3
+  AUTO = 3
 };
 
 enum SwingModes {
@@ -19,17 +19,20 @@ enum SwingModes {
   ENABLED = 1
 };
 
+typedef std::function<void(float temperature, float humidity, bool isActive, ACState currentState)> ac_callback;
+
 class ACController {
     IRsend irsend;
     AM2320Controller sensorController;
-    
-    float targetTemperature = 22;
+    ac_callback callback;
+    float heatingThresholdTemperature = 15;
+    float coolingThresholdTemperature = 22;
 
     ACState currentHeaterCoolerState = OFF;
     ACState targetHeaterCoolerState = OFF;
 
-    u_int RotationSpeed = 0;
-    u_int Air_flow = 0;
+    u_int RotationSpeed = 50;
+    u_int Air_flow = 1;
 
     SwingModes swingMode = DISABLED;
     // 0 : low
@@ -44,15 +47,29 @@ class ACController {
 
 
   public:
-    ACController(uint16_t irPin): irsend(irPin), sensorController() {}
-    
+    ACController(uint16_t irPin): irsend(irPin), sensorController() {
+
+      sensorController.setCallback([&](float t, float h) {
+        if (callback)
+          callback(t, h, Active(), currentHeaterCoolerState);
+      });
+    }
+
     void begin(int sda, int scl) {
       irsend.begin();
       sensorController.begin(sda, scl);
     }
 
-    void setCallback(measurement_callback _callback) {
-      sensorController.setCallback(_callback);
+    void setCallback(ac_callback _callback) {
+      callback = _callback;
+    }
+
+    float CurrentTemperature() {
+      return sensorController.CurrentTemperature();
+    }
+
+    float CurrentHumidity() {
+      return sensorController.CurrentHumidity();
     }
 
     void Loop() {
@@ -83,24 +100,32 @@ class ACController {
         Ac_Activate();
 
     }
-    
-    void SetTargetTemperature(u_int temperature) {
-      targetTemperature = temperature;
-      if (currentHeaterCoolerState != OFF)
-        Ac_Activate();
+
+    void SetCoolingThresholdTemperature(float temperature) {
+      coolingThresholdTemperature = temperature;
     }
 
-    ACState CurrentHeaterCoolerState(){
+    void SetHeatingThresholdTemperature(float temperature) {
+      heatingThresholdTemperature = temperature;
+    }
+
+    ACState CurrentHeaterCoolerState() {
       return   currentHeaterCoolerState;
     }
 
-    bool Active(){
-      return (currentHeaterCoolerState==OFF)?false:true;
+    ACState TargettHeaterCoolerState() {
+      return   targetHeaterCoolerState;
+    }
+
+    bool Active() {
+      if (currentHeaterCoolerState == HEATING && CurrentTemperature() < heatingThresholdTemperature) return true;
+      if (currentHeaterCoolerState == COOLING && CurrentTemperature() > coolingThresholdTemperature) return true;
+      return false;
     }
 
     void SetTargetState(ACState newstate) {
       targetHeaterCoolerState = newstate;
-      currentHeaterCoolerState = (newstate<3)?newstate:((sensorController.CurrentTemperature()<15)?HEATING:COOLING);
+      currentHeaterCoolerState = (newstate < 3) ? newstate : ((CurrentTemperature() < 15) ? HEATING : COOLING);
       switch (currentHeaterCoolerState) {
         case OFF:
           Ac_Power_Down();
@@ -115,6 +140,8 @@ class ACController {
           Ac_Activate();
           break;
       };
+      if (callback)
+        callback(CurrentTemperature(), CurrentHumidity(), Active(), currentHeaterCoolerState);
     }
 
   private:
@@ -128,7 +155,13 @@ class ACController {
         ac_msbits4 = 4;  // heating
       else
         ac_msbits4 = 0;  // cooling
-      unsigned int ac_msbits5 =  (targetTemperature < 15) ? 0 : targetTemperature - 15;
+      unsigned int ac_msbits5;
+      if (currentHeaterCoolerState == HEATING)
+        ac_msbits5 =  (heatingThresholdTemperature < 15) ? 0 : heatingThresholdTemperature - 15;  // heating
+      else
+        ac_msbits5 =  (coolingThresholdTemperature < 15) ? 0 : coolingThresholdTemperature - 15;  // cooling
+
+
       unsigned int ac_msbits6;
 
       if (0 <= Air_flow && Air_flow <= 2) {
@@ -147,13 +180,13 @@ class ACController {
       ac_code_to_sent = (ac_code_to_sent + ac_msbits7);
 
       irsend.sendLG(ac_code_to_sent, 28);
-      LOG_D("AC ACTIVATE code:%d TargetTemperature:%f, TargetState:%d, Flow:%d",ac_code_to_sent,targetTemperature,currentHeaterCoolerState,Air_flow);
+      LOG_D("AC ACTIVATE code:%d TargetTemperature:%f, TargetState:%d, Flow:%d", ac_code_to_sent, coolingThresholdTemperature, currentHeaterCoolerState, Air_flow);
     }
 
 
     void Ac_Power_Down() {
       ac_code_to_sent = 0x88C0051;
-       irsend.sendLG(ac_code_to_sent, 28);
+      irsend.sendLG(ac_code_to_sent, 28);
       LOG_D("sent AC off");
     }
 
@@ -162,7 +195,7 @@ class ACController {
         ac_code_to_sent = 0x8813149;
       else
         ac_code_to_sent = 0x881315A;
-      
+
       irsend.sendLG(ac_code_to_sent, 28);
       LOG_D("sent AC Swing:%d ", ac_code_to_sent);
 

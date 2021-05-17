@@ -3,24 +3,24 @@
 #include <Arduino.h>
 
 //#define _RGB_
-#define _RGBW_
-//#define _DIMMER_
+//#define _RGBW_
+#define _DIMMER_
 //#define _DUAL_
-#define _AC_
-//#define _TH_
+//#define _AC_
+#define _TH_
 
-#define ACCESSORY_NAME "test Light"
+#define ACCESSORY_NAME "Master Bed Strip"
 #define IR_LED_PIN 10
 
-#define L1PIN 13
+#define L1PIN 15
 #define L2PIN 14
 
-#define WHITE_LedPin 13
+#define WHITE_LedPin 15
 #define RED_LedPin 16
 #define GREEN_LedPin 14
 #define BLUE_LedPin 12
 
-//#define INVERT_PIN_OUTPUT
+#define INVERT_PIN_OUTPUT
 
 #define SDA_PIN 4
 #define SCL_PIN 5

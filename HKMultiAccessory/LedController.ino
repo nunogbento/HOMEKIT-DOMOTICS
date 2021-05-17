@@ -16,22 +16,35 @@ void LedController::Update() {
         hsi2rgb(Hue, Saturation, Brightness, rgb_colors);
       else
         hsi2rgbw(Hue, Saturation, Brightness, rgb_colors);
-        
-      LOG_D("Updating type=%d, Hue:%d, Saturation:%d, Brightness:%d --> r:%d,g:%d,b:%d,w:%d",type,Hue,Saturation,Brightness,rgb_colors[0],rgb_colors[1],rgb_colors[2],rgb_colors[3]);
+
+      LOG_D("Updating type=%d, Hue:%d, Saturation:%d, Brightness:%d --> r:%d,g:%d,b:%d,w:%d", type, Hue, Saturation, Brightness, rgb_colors[0], rgb_colors[1], rgb_colors[2], rgb_colors[3]);
       analogWrite(R_pin, rgb_colors[0]);
       analogWrite(G_pin, rgb_colors[1]);
       analogWrite(B_pin, rgb_colors[2]);
       if (type == RGBWLED )
         analogWrite(W_pin, rgb_colors[3]);
     } else {
-     // LOG_D("LED switch is_on:%d pi:%d ",is_on,W_pin);
+    // LOG_D("LED switch is_on:%d pi:%d ",is_on,W_pin);
     if (!is_on) //lamp - switch to off
+#if defined(INVERT_PIN_OUTPUT)
+      digitalWrite(W_pin, 1);
+#else
       digitalWrite(W_pin, 0);
+#endif
     else {
       if (type == DIMMABLELED)
+#if defined(INVERT_PIN_OUTPUT)
+        analogWrite(W_pin, map(Brightness, 0, 100, 255, 0));
+#else
         analogWrite(W_pin, map(Brightness, 0, 100, 0, 255));
+#endif
+
       else
+#if defined(INVERT_PIN_OUTPUT)
+        digitalWrite(W_pin, 0);
+#else
         digitalWrite(W_pin, 1);
+#endif
     }
   }
 }

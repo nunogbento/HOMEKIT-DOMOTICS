@@ -41,6 +41,11 @@ homekit_characteristic_t cha_active = HOMEKIT_CHARACTERISTIC_(ACTIVE, 0);
 // format: float; min 0, max 100, step 0.1, unit celsius
 homekit_characteristic_t cha_temperature = HOMEKIT_CHARACTERISTIC_(CURRENT_TEMPERATURE, 0);
 
+// format: float; min 0, max 100, step 0.1, unit celsius
+homekit_characteristic_t cha_c_t_temperature = HOMEKIT_CHARACTERISTIC_(COOLING_THRESHOLD_TEMPERATURE, 22);
+// format: float; min 0, max 100, step 0.1, unit celsius
+homekit_characteristic_t cha_h_t_temperature = HOMEKIT_CHARACTERISTIC_(HEATING_THRESHOLD_TEMPERATURE, 15);
+
 // format: u_int; min 0, max 3, step 1,
 homekit_characteristic_t cha_current_state = HOMEKIT_CHARACTERISTIC_(CURRENT_HEATER_COOLER_STATE, 0);
 
@@ -115,6 +120,8 @@ homekit_accessory_t *accessories[] = {
       HOMEKIT_CHARACTERISTIC(NAME, "LG AC"),
                              &cha_active
                              , &cha_temperature
+                             , &cha_c_t_temperature
+                             , &cha_h_t_temperature
                              , &cha_current_state
                              , &cha_target_state
                              , &cha_rotation_speed

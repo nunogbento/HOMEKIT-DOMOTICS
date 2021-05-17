@@ -44,11 +44,11 @@ void setup() {
   Serial.begin(115200);
   chipId = ACCESSORY_NAME + String(ESP.getChipId());
   //Local intialization. Once its business is done, there is no need to keep it around
-  WiFiManager wifiManager; 
+  WiFiManager wifiManager;
   //reset saved settings
   //wifiManager.resetSettings();
   wifiManager.setConfigPortalTimeout(240); // auto close configportal after n seconds
-  if (!wifiManager.autoConnect(chipId.c_str())) 
+  if (!wifiManager.autoConnect(chipId.c_str()))
   {
     Serial.println(F("Failed to connect. Reset and try again..."));
     delay(3000);
@@ -56,7 +56,7 @@ void setup() {
     ESP.reset();
     delay(5000);
   }
- 
+
   //setup OTA
   ArduinoOTA.setPort(8266);
   ArduinoOTA.setHostname(chipId.c_str());
@@ -129,6 +129,9 @@ extern "C" homekit_characteristic_t cha_current_state;
 extern "C" homekit_characteristic_t cha_target_state;
 extern "C" homekit_characteristic_t cha_rotation_speed;
 extern "C" homekit_characteristic_t cha_swing_mode;
+extern "C" homekit_characteristic_t cha_h_t_temperature;
+extern "C" homekit_characteristic_t cha_c_t_temperature;
+
 #endif
 
 
@@ -160,16 +163,30 @@ void my_homekit_setup() {
   am2320Controller.begin(SDA_PIN, SCL_PIN);
 #endif
 #if defined(_AC_)
-  acController.setCallback([&](float t, float h) {
-    cha_temperature.value.float_value = t;
+  acController.setCallback([&](float temperature, float humidity, bool isActive, ACState currentState) {
+    cha_temperature.value.float_value = temperature;
     homekit_characteristic_notify(&cha_temperature, cha_temperature.value);
 
-    cha_humidity.value.float_value = h;
+    cha_humidity.value.float_value = humidity;
     homekit_characteristic_notify(&cha_humidity, cha_humidity.value);
+
+    //notify active state
+    cha_active.value.bool_value = isActive;
+    homekit_characteristic_notify(&cha_active, cha_active.value);
+    LOG_D("Notify Active :%i", cha_active.value.bool_value);
+
+    //notify current state
+    cha_current_state.value.uint8_value = (uint8_t)currentState;
+    homekit_characteristic_notify(&cha_current_state, cha_current_state.value);
+    LOG_D("Notify Current  State:%i", cha_current_state.value.uint8_value);
+
   });
+
   acController.begin(SDA_PIN, SCL_PIN);
   cha_target_state.setter = set_target_state;
   cha_rotation_speed.setter = set_rotation_speed;
+  cha_c_t_temperature.setter = set_c_t_temperature;
+  cha_h_t_temperature.setter = set_h_t_temperature;
   cha_swing_mode.setter = set_swing_mode;
 #endif
   arduino_homekit_setup(&accessory_config);
@@ -262,23 +279,30 @@ void set_brightB(const homekit_value_t v) {
 
 
 #if defined(_AC_)
+
 void set_target_state(const homekit_value_t v) {
   uint8_t state = v.uint8_value;
   cha_target_state.value.uint8_value = state; //sync the value
   acController.SetTargetState((ACState)state);
   LOG_D("target  State:%i", state);
-  //notify active state
-  cha_active.value.bool_value = acController.Active();
-  homekit_characteristic_notify(&cha_active, cha_active.value);
-  LOG_D("Active :%i", cha_active.value.bool_value);
-  //notify current state
-  cha_current_state.value.uint8_value = (uint8_t)acController.CurrentHeaterCoolerState();;
-  homekit_characteristic_notify(&cha_current_state, cha_current_state.value);
-  LOG_D("Current  State:%i", cha_current_state.value.uint8_value);
+}
+
+
+void set_h_t_temperature(const homekit_value_t v) {
+  float htt = v.float_value;
+  cha_h_t_temperature.value.float_value = htt; //sync the value
+  LOG_D("Heating threshold Temperature set: %f", htt);
+  acController.SetHeatingThresholdTemperature(htt);
+}
+
+void set_c_t_temperature(const homekit_value_t v) {
+  float ctt = v.float_value;
+  cha_c_t_temperature.value.float_value = ctt; //sync the value
+  LOG_D("Cooling threshold Temperature set: %f", ctt);
+  acController.SetCoolingThresholdTemperature(ctt);
 }
 
 void set_rotation_speed(const homekit_value_t v) {
-
   float rotation_speed = v.float_value;
   cha_rotation_speed.value.float_value = rotation_speed; //sync the value
   LOG_D("Rotation Speed In:%f", rotation_speed);
@@ -286,7 +310,6 @@ void set_rotation_speed(const homekit_value_t v) {
 }
 
 void set_swing_mode(const homekit_value_t v) {
-
   uint8_t swing_mode = v.uint8_value;
   LOG_D("SwingMode:%i", swing_mode);
   cha_swing_mode.value.uint8_value = swing_mode; //sync the value

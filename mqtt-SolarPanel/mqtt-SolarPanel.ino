@@ -11,7 +11,7 @@
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>          
 #include <Wire.h>
-#include <Adafruit_ADS1015.h>
+#include <Adafruit_ADS1X15.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
