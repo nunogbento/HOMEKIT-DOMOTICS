@@ -163,18 +163,14 @@ void my_homekit_setup() {
   am2320Controller.begin(SDA_PIN, SCL_PIN);
 #endif
 #if defined(_AC_)
-  acController.setCallback([&](float temperature, float humidity, bool isActive, ACState currentState) {
+  acController.setCallback([&](float temperature, float humidity,  CURRENT_C_H_State currentState) {
     cha_temperature.value.float_value = temperature;
     homekit_characteristic_notify(&cha_temperature, cha_temperature.value);
 
     cha_humidity.value.float_value = humidity;
     homekit_characteristic_notify(&cha_humidity, cha_humidity.value);
 
-    //notify active state
-    cha_active.value.bool_value = isActive;
-    homekit_characteristic_notify(&cha_active, cha_active.value);
-    LOG_D("Notify Active :%i", cha_active.value.bool_value);
-
+  
     //notify current state
     cha_current_state.value.uint8_value = (uint8_t)currentState;
     homekit_characteristic_notify(&cha_current_state, cha_current_state.value);
@@ -187,6 +183,7 @@ void my_homekit_setup() {
   cha_rotation_speed.setter = set_rotation_speed;
   cha_c_t_temperature.setter = set_c_t_temperature;
   cha_h_t_temperature.setter = set_h_t_temperature;
+  cha_active.setter = set_active;
   cha_swing_mode.setter = set_swing_mode;
 #endif
   arduino_homekit_setup(&accessory_config);
@@ -283,7 +280,7 @@ void set_brightB(const homekit_value_t v) {
 void set_target_state(const homekit_value_t v) {
   uint8_t state = v.uint8_value;
   cha_target_state.value.uint8_value = state; //sync the value
-  acController.SetTargetState((ACState)state);
+  acController.SetTargetState((TARGET_C_H_State)state);
   LOG_D("target  State:%i", state);
 }
 
@@ -307,6 +304,17 @@ void set_rotation_speed(const homekit_value_t v) {
   cha_rotation_speed.value.float_value = rotation_speed; //sync the value
   LOG_D("Rotation Speed In:%f", rotation_speed);
   acController.SetRotationSpeed(rotation_speed);
+}
+
+void set_active(const homekit_value_t v){
+   bool toActive = v.bool_value;
+  cha_active.value.bool_value = toActive; //sync the value
+  LOG_D("Active set to:%i", toActive);
+  if(toActive)
+    acController.SetActive();
+  else
+    acController.SetInactive();
+  
 }
 
 void set_swing_mode(const homekit_value_t v) {

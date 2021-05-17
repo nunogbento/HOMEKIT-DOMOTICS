@@ -7,11 +7,17 @@
 #include "configuration.h"
 #include "AM2320Controller.h"
 
-enum ACState {
-  OFF = 0,
-  HEATING = 1,
-  COOLING = 2,
-  AUTO = 3
+enum TARGET_C_H_State {
+  AUTO = 0,
+  HEAT = 1,
+  COOL = 2,
+};
+
+enum CURRENT_C_H_State {
+  INACTIVE = 0,
+  IDLE = 1,
+  HEATING = 2,
+  COOLING = 3
 };
 
 enum SwingModes {
@@ -19,7 +25,7 @@ enum SwingModes {
   ENABLED = 1
 };
 
-typedef std::function<void(float temperature, float humidity, bool isActive, ACState currentState)> ac_callback;
+typedef std::function<void(float temperature, float humidity, CURRENT_C_H_State currentState)> ac_callback;
 
 class ACController {
     IRsend irsend;
@@ -28,8 +34,9 @@ class ACController {
     float heatingThresholdTemperature = 15;
     float coolingThresholdTemperature = 22;
 
-    ACState currentHeaterCoolerState = OFF;
-    ACState targetHeaterCoolerState = OFF;
+    CURRENT_C_H_State currentHeaterCoolerState = INACTIVE;
+    TARGET_C_H_State targetHeaterCoolerState = AUTO;
+
 
     u_int RotationSpeed = 50;
     u_int Air_flow = 1;
@@ -50,8 +57,12 @@ class ACController {
     ACController(uint16_t irPin): irsend(irPin), sensorController() {
 
       sensorController.setCallback([&](float t, float h) {
+        if (targetHeaterCoolerState == AUTO)
+          currentHeaterCoolerState = (t < heatingThresholdTemperature) ? HEATING : (t > coolingThresholdTemperature) ? COOLING : IDLE;
+        if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
+          Ac_Activate();
         if (callback)
-          callback(t, h, Active(), currentHeaterCoolerState);
+          callback(t, h, currentHeaterCoolerState);
       });
     }
 
@@ -78,15 +89,16 @@ class ACController {
 
     void EnableSwing() {
       swingMode = ENABLED;
-      if (currentHeaterCoolerState != OFF)
+      if (currentHeaterCoolerState > IDLE)
         Ac_Change_Air_Swing();
     }
 
     void DisableSwing() {
       swingMode = DISABLED;
-      if (currentHeaterCoolerState != OFF)
+      if (currentHeaterCoolerState > IDLE)
         Ac_Change_Air_Swing();
     }
+
     void SetRotationSpeed(u_int rotationspeed) {
       RotationSpeed = rotationspeed;
       if (RotationSpeed < 33)
@@ -96,52 +108,82 @@ class ACController {
       else
         Air_flow = 2;
 
-      if (currentHeaterCoolerState != OFF)
+      if (currentHeaterCoolerState > IDLE)
         Ac_Activate();
+
 
     }
 
     void SetCoolingThresholdTemperature(float temperature) {
       coolingThresholdTemperature = temperature;
+      if (targetHeaterCoolerState == AUTO)
+        currentHeaterCoolerState = (CurrentTemperature() < heatingThresholdTemperature) ? HEATING : (CurrentTemperature() > coolingThresholdTemperature) ? COOLING : IDLE;
+      if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
+        Ac_Activate();
+      if (callback)
+        callback(CurrentTemperature(), CurrentHumidity(),  currentHeaterCoolerState);
     }
 
     void SetHeatingThresholdTemperature(float temperature) {
       heatingThresholdTemperature = temperature;
+      if (targetHeaterCoolerState == AUTO)
+        currentHeaterCoolerState = (CurrentTemperature() < heatingThresholdTemperature) ? HEATING : (CurrentTemperature() > coolingThresholdTemperature) ? COOLING : IDLE;
+      if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
+        Ac_Activate();
+      if (callback)
+        callback(CurrentTemperature(), CurrentHumidity(),  currentHeaterCoolerState);
     }
 
-    ACState CurrentHeaterCoolerState() {
+    CURRENT_C_H_State CurrentHeaterCoolerState() {
       return   currentHeaterCoolerState;
+
     }
 
-    ACState TargettHeaterCoolerState() {
+    TARGET_C_H_State TargettHeaterCoolerState() {
       return   targetHeaterCoolerState;
     }
 
     bool Active() {
-      if (currentHeaterCoolerState == HEATING && CurrentTemperature() < heatingThresholdTemperature) return true;
-      if (currentHeaterCoolerState == COOLING && CurrentTemperature() > coolingThresholdTemperature) return true;
-      return false;
+      //if (currentHeaterCoolerState == HEATING && CurrentTemperature() < heatingThresholdTemperature) return true;
+      //if (currentHeaterCoolerState == COOLING && CurrentTemperature() > coolingThresholdTemperature) return true;
+      return currentHeaterCoolerState != INACTIVE;
     }
 
-    void SetTargetState(ACState newstate) {
-      targetHeaterCoolerState = newstate;
-      currentHeaterCoolerState = (newstate < 3) ? newstate : ((CurrentTemperature() < 15) ? HEATING : COOLING);
-      switch (currentHeaterCoolerState) {
-        case OFF:
-          Ac_Power_Down();
-          break;
-        case HEATING:
-          Ac_Activate();
-          break;
-        case COOLING:
-          Ac_Activate();
-          break;
-        case AUTO:
-          Ac_Activate();
-          break;
-      };
+    void SetInactive() {
+      currentHeaterCoolerState = INACTIVE;
+      Ac_Power_Down();
       if (callback)
-        callback(CurrentTemperature(), CurrentHumidity(), Active(), currentHeaterCoolerState);
+        callback(CurrentTemperature(), CurrentHumidity(), currentHeaterCoolerState);
+    }
+
+    void SetActive() {
+      
+      if(targetHeaterCoolerState == AUTO) 
+        currentHeaterCoolerState = (CurrentTemperature() < heatingThresholdTemperature) ? HEATING : ((CurrentTemperature() > coolingThresholdTemperature) ? COOLING : IDLE);
+      else 
+         currentHeaterCoolerState =(targetHeaterCoolerState == HEAT)?HEATING:COOLING;
+      
+      if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
+        Ac_Activate();
+      if (callback)
+        callback(CurrentTemperature(), CurrentHumidity(),  currentHeaterCoolerState);
+    }
+
+
+    void SetTargetState(TARGET_C_H_State newstate) {
+      targetHeaterCoolerState = newstate;
+      
+      if(newstate == AUTO) 
+        currentHeaterCoolerState = (CurrentTemperature() < heatingThresholdTemperature) ? HEATING : ((CurrentTemperature() > coolingThresholdTemperature) ? COOLING : IDLE);
+      else 
+         currentHeaterCoolerState =(newstate == HEAT)?HEATING:COOLING;
+         
+      
+      if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
+        Ac_Activate();
+    
+      if (callback)
+        callback(CurrentTemperature(), CurrentHumidity(),  currentHeaterCoolerState);
     }
 
   private:
@@ -155,7 +197,9 @@ class ACController {
         ac_msbits4 = 4;  // heating
       else
         ac_msbits4 = 0;  // cooling
-      unsigned int ac_msbits5;
+     
+
+        unsigned int ac_msbits5;
       if (currentHeaterCoolerState == HEATING)
         ac_msbits5 =  (heatingThresholdTemperature < 15) ? 0 : heatingThresholdTemperature - 15;  // heating
       else

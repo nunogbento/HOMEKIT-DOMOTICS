@@ -8,7 +8,7 @@
 //#define _DUAL_
 #define _AC_
 //#define _TH_
-
+//#define INVERT_PIN_OUTPUT
 #define ACCESSORY_NAME "Guest Bed Strip"
 #define IR_LED_PIN 10
 
