@@ -54,7 +54,7 @@ void setup() {
     delay(3000);
     //reset and try again
     ESP.reset();
-    delay(5000);
+     delay(5000);
   }
 
   //setup OTA

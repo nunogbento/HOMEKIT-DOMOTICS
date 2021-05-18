@@ -127,13 +127,21 @@ homekit_accessory_t *accessories[] = {
                              , &cha_rotation_speed
                              , &cha_swing_mode
                              ,NULL
-    }),
-    HOMEKIT_SERVICE(HUMIDITY_SENSOR, .primary = true, .characteristics = (homekit_characteristic_t*[]) {
-      HOMEKIT_CHARACTERISTIC(NAME, "Humidity"),
-                             &cha_humidity,
-                             NULL
     })
     , NULL
+  }),
+  HOMEKIT_ACCESSORY(.id=3, .category=homekit_accessory_category_sensor, .services=(homekit_service_t*[]) {
+      HOMEKIT_SERVICE(ACCESSORY_INFORMATION, .characteristics=(homekit_characteristic_t*[]) {
+      HOMEKIT_CHARACTERISTIC(NAME, "Humidity Sensor"),
+      HOMEKIT_CHARACTERISTIC(IDENTIFY, my_accessory_identify),
+      NULL
+    }),
+      HOMEKIT_SERVICE(HUMIDITY_SENSOR, .primary=true, .characteristics=(homekit_characteristic_t*[]) {
+      HOMEKIT_CHARACTERISTIC(NAME, "Humidity"),
+      &cha_humidity,
+      NULL
+    }),
+    NULL
   })
 #endif
   , NULL
