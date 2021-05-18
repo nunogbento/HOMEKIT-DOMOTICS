@@ -57,7 +57,7 @@ class SolarPanelController {
 
     void begin(int sda, int scl,String chipId) {
 
-      TelemetryTopic = TELEMETRYTOPIC(chipId);
+      TelemetryTopic =chipId+ "/from";
       ads.setGain(GAIN_ONE);        // 0.125mv
 
       Wire.begin( sda, scl);

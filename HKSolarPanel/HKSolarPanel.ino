@@ -1,6 +1,4 @@
 #include <Arduino.h>
-
-
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
 #elif defined(ESP32)
@@ -16,7 +14,7 @@ String chipId;
 
 
 
-SolarPanelController solarPanelController();
+SolarPanelController solarPanelController;
 
 
 void setup() {
@@ -78,7 +76,7 @@ void loop() {
 
 // access your HomeKit characteristics defined in my_accessory.c
 
-
+extern "C" homekit_server_config_t accessory_config;
 extern "C" homekit_characteristic_t cha_c_temperature_s;
 extern "C" homekit_characteristic_t cha_c_temperature_e;
 extern "C" homekit_characteristic_t cha_t_temperature_s;
@@ -99,21 +97,21 @@ void my_homekit_setup() {
 
   solarPanelController.setCallback([&](float temperature, Current_State currentState_s, Current_State currentState_e) {
     cha_c_temperature_s.value.float_value = temperature;
-    homekit_characteristic_notify(&cha_c_temperature_s, cha_temperature_s.value);
+    homekit_characteristic_notify(&cha_c_temperature_s, cha_c_temperature_s.value);
 
     cha_c_temperature_e.value.float_value = temperature;
-    homekit_characteristic_notify(&cha_c_temperature_e, cha_temperature_e.value);
+    homekit_characteristic_notify(&cha_c_temperature_e, cha_c_temperature_e.value);
 
 
     //notify current state
     cha_current_state_s.value.uint8_value = (uint8_t)currentState_s;
     homekit_characteristic_notify(&cha_current_state_s, cha_current_state_s.value);
-    LOG_D("Notify Current  State:%i", cha_current_state.value.uint8_value);
+    LOG_D("Notify Current  State:%i", cha_current_state_s.value.uint8_value);
 
     //notify current state
     cha_current_state_e.value.uint8_value = (uint8_t)currentState_e;
     homekit_characteristic_notify(&cha_current_state_e, cha_current_state_e.value);
-    LOG_D("Notify Current  State:%i", cha_current_state.value.uint8_value);
+    LOG_D("Notify Current  State:%i", cha_current_state_e.value.uint8_value);
 
   });
 
@@ -161,12 +159,12 @@ void set_target_temperature_e(const homekit_value_t v) {
   float htt = v.float_value;
   cha_t_temperature_e.value.float_value = htt; //sync the value
   LOG_D("Heating threshold Temperature set: %f", htt);
-  solarPanelController.SetHeatingThresholdTemperature(htt);
+  solarPanelController.SetTargetElecticTemperature(htt);
 }
 
 void set_target_temperature_s(const homekit_value_t v) {
   float ctt = v.float_value;
   cha_t_temperature_s.value.float_value = ctt; //sync the value
   LOG_D("Cooling threshold Temperature set: %f", ctt);
-  solarPanelController.SetCoolingThresholdTemperature(ctt);
+  solarPanelController.SetTargetSolarTemperature(ctt);
 }

@@ -7,7 +7,7 @@
 #define MQTT_SERVER "192.168.1.109"
 
 
-#define TELEMETRYTOPIC(chipid)  PSTR(chipid)+"/from"
+
 
 #define SDA_PIN 5
 #define SCL_PIN 4
