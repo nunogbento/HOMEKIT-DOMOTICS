@@ -57,12 +57,19 @@ class ACController {
     ACController(uint16_t irPin): irsend(irPin), sensorController() {
 
       sensorController.setCallback([&](float t, float h) {
-        if (targetHeaterCoolerState == AUTO)
-          currentHeaterCoolerState = (t < heatingThresholdTemperature) ? HEATING : (t > coolingThresholdTemperature) ? COOLING : IDLE;
-        if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
-          Ac_Activate();
-        if (callback)
-          callback(t, h, currentHeaterCoolerState);
+        CURRENT_C_H_State newState;
+        if (targetHeaterCoolerState == AUTO && currentHeaterCoolerState != INACTIVE) {
+          newState = (t < heatingThresholdTemperature) ? HEATING : (t > coolingThresholdTemperature) ? COOLING : IDLE;
+          if (newState != currentHeaterCoolerState) {
+            currentHeaterCoolerState = newState;
+            if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
+              Ac_Activate();
+            else
+              Ac_Power_Down();
+            if (callback)
+              callback(t, h, currentHeaterCoolerState);
+          }
+        }
       });
     }
 
@@ -116,22 +123,30 @@ class ACController {
 
     void SetCoolingThresholdTemperature(float temperature) {
       coolingThresholdTemperature = temperature;
-      if (targetHeaterCoolerState == AUTO)
+      if (targetHeaterCoolerState == AUTO    && currentHeaterCoolerState != INACTIVE) {
         currentHeaterCoolerState = (CurrentTemperature() < heatingThresholdTemperature) ? HEATING : (CurrentTemperature() > coolingThresholdTemperature) ? COOLING : IDLE;
-      if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
-        Ac_Activate();
-      if (callback)
-        callback(CurrentTemperature(), CurrentHumidity(),  currentHeaterCoolerState);
+        if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
+          Ac_Activate();
+        else
+          Ac_Power_Down();
+
+        if (callback)
+          callback(CurrentTemperature(), CurrentHumidity(),  currentHeaterCoolerState);
+      }
     }
 
     void SetHeatingThresholdTemperature(float temperature) {
       heatingThresholdTemperature = temperature;
-      if (targetHeaterCoolerState == AUTO)
+      if (targetHeaterCoolerState == AUTO   && currentHeaterCoolerState != INACTIVE) {
         currentHeaterCoolerState = (CurrentTemperature() < heatingThresholdTemperature) ? HEATING : (CurrentTemperature() > coolingThresholdTemperature) ? COOLING : IDLE;
-      if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
-        Ac_Activate();
-      if (callback)
-        callback(CurrentTemperature(), CurrentHumidity(),  currentHeaterCoolerState);
+        if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
+          Ac_Activate();
+        else
+          Ac_Power_Down();
+
+        if (callback)
+          callback(CurrentTemperature(), CurrentHumidity(),  currentHeaterCoolerState);
+      }
     }
 
     CURRENT_C_H_State CurrentHeaterCoolerState() {
@@ -157,14 +172,15 @@ class ACController {
     }
 
     void SetActive() {
-      
-      if(targetHeaterCoolerState == AUTO) 
+
+      if (targetHeaterCoolerState == AUTO)
         currentHeaterCoolerState = (CurrentTemperature() < heatingThresholdTemperature) ? HEATING : ((CurrentTemperature() > coolingThresholdTemperature) ? COOLING : IDLE);
-      else 
-         currentHeaterCoolerState =(targetHeaterCoolerState == HEAT)?HEATING:COOLING;
-      
+      else
+        currentHeaterCoolerState = (targetHeaterCoolerState == HEAT) ? HEATING : COOLING;
+
       if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
         Ac_Activate();
+
       if (callback)
         callback(CurrentTemperature(), CurrentHumidity(),  currentHeaterCoolerState);
     }
@@ -172,16 +188,18 @@ class ACController {
 
     void SetTargetState(TARGET_C_H_State newstate) {
       targetHeaterCoolerState = newstate;
-      
-      if(newstate == AUTO) 
+
+      if (newstate == AUTO)
         currentHeaterCoolerState = (CurrentTemperature() < heatingThresholdTemperature) ? HEATING : ((CurrentTemperature() > coolingThresholdTemperature) ? COOLING : IDLE);
-      else 
-         currentHeaterCoolerState =(newstate == HEAT)?HEATING:COOLING;
-         
-      
+      else
+        currentHeaterCoolerState = (newstate == HEAT) ? HEATING : COOLING;
+
+
       if (currentHeaterCoolerState == HEATING || currentHeaterCoolerState == COOLING)
         Ac_Activate();
-    
+      else
+        Ac_Power_Down();
+        
       if (callback)
         callback(CurrentTemperature(), CurrentHumidity(),  currentHeaterCoolerState);
     }
@@ -197,9 +215,9 @@ class ACController {
         ac_msbits4 = 4;  // heating
       else
         ac_msbits4 = 0;  // cooling
-     
 
-        unsigned int ac_msbits5;
+
+      unsigned int ac_msbits5;
       if (currentHeaterCoolerState == HEATING)
         ac_msbits5 =  (heatingThresholdTemperature < 15) ? 0 : heatingThresholdTemperature - 15;  // heating
       else

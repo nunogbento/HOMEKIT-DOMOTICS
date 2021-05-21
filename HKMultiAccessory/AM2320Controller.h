@@ -47,22 +47,22 @@ class AM2320Controller {
         if (sensor.measure()) {
 
           currentTemperature = sensor.getTemperature();
-          LOG_D("Temperature: %f", currentTemperature);
           currentHumidity = sensor.getHumidity();
-          LOG_D("Humidity: %f", currentHumidity);
+          LOG_D("Temperature: %f ;Humidity: %f", currentTemperature, currentHumidity);
+
           if (callback)
             callback(currentTemperature, currentHumidity);
 
-          else {  // error has occured
-            int errorCode = sensor.getErrorCode();
-            switch (errorCode) {
-              case 1: LOG_D("ERR: Sensor is offline"); break;
-              case 2: LOG_D("ERR: CRC validation failed."); break;
-            }
+        } else {  // error has occured
+          int errorCode = sensor.getErrorCode();
+          switch (errorCode) {
+            case 1: LOG_D("ERR: Sensor is offline"); break;
+            case 2: LOG_D("ERR: CRC validation failed."); break;
           }
         }
       }
     }
+
 
 };
 
