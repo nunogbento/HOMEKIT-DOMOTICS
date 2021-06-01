@@ -20,7 +20,7 @@ PCCWDController pccwdController(Serial);
 void setup() {
  
   Serial.begin(14400);
-  Serial.begin(115200);
+  //Serial.begin(115200);
   chipId = ACCESSORY_NAME + String(ESP.getChipId());
   //Local intialization. Once its business is done, there is no need to keep it around
   WiFiManager wifiManager;
