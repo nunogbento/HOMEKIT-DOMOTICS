@@ -19,8 +19,8 @@ PCCWDController pccwdController(Serial);
 
 void setup() {
  
- // Serial.begin(14400);
-  Serial.begin(115200);
+  Serial.begin(14400);
+  //Serial.begin(115200);
   chipId = ACCESSORY_NAME + String(ESP.getChipId());
   //Local intialization. Once its business is done, there is no need to keep it around
   WiFiManager wifiManager;
@@ -29,7 +29,7 @@ void setup() {
   wifiManager.setConfigPortalTimeout(240); // auto close configportal after n seconds
   if (!wifiManager.autoConnect(chipId.c_str()))
   {
-   LOG_D("Failed to connect. Reset and try again...");
+    Serial.println(F("Failed to connect. Reset and try again..."));
     delay(3000);
     //reset and try again
     ESP.reset();
