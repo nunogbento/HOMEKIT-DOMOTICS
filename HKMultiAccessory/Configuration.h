@@ -1,6 +1,6 @@
 #ifndef CONFIGURATION_H_
 #define CONFIGURATION_H_
-#include <Arduino.h>
+
 
 //#define _RGB_
 //#define _RGBW_
@@ -9,7 +9,7 @@
 #define _AC_
 //#define _TH_
 
-#define ACCESSORY_NAME "Master Bed Strip"
+#define ACCESSORY_NAME "Guest Bed Strip"
 #define IR_LED_PIN 10
 
 #define L1PIN 13
@@ -19,8 +19,6 @@
 #define RED_LedPin 16
 #define GREEN_LedPin 14
 #define BLUE_LedPin 12
-
-#define INVERT_PIN_OUTPUT
 
 #define SDA_PIN 4
 #define SCL_PIN 5

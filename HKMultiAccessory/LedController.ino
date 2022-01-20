@@ -26,25 +26,12 @@ void LedController::Update() {
     } else {
     // LOG_D("LED switch is_on:%d pi:%d ",is_on,W_pin);
     if (!is_on) //lamp - switch to off
-#if defined(INVERT_PIN_OUTPUT)
-      digitalWrite(W_pin, 1);
-#else
       digitalWrite(W_pin, 0);
-#endif
     else {
       if (type == DIMMABLELED)
-#if defined(INVERT_PIN_OUTPUT)
-        analogWrite(W_pin, map(Brightness, 0, 100, 255, 0));
-#else
         analogWrite(W_pin, map(Brightness, 0, 100, 0, 255));
-#endif
-
       else
-#if defined(INVERT_PIN_OUTPUT)
-        digitalWrite(W_pin, 0);
-#else
         digitalWrite(W_pin, 1);
-#endif
     }
   }
 }

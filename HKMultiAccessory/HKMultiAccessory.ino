@@ -8,6 +8,8 @@
 #endif
 #include <ArduinoOTA.h>
 #include <WiFiManager.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
 #include <arduino_homekit_server.h>
 #include "configuration.h"
 #include "LedController.h"
@@ -15,6 +17,11 @@
 #include "AM2320Controller.h"
 
 String chipId;
+const char* mqtt_server = "192.168.1.109";
+const char* mqttuser = "";
+const char* mqttpass = "";
+
+const char* logTopic = "sensor/env/update";
 
 #if !(defined(_DIMMER_) || defined(_RGB_) || defined(_RGBW_))
 LedController LCA(L1PIN, false);
@@ -40,6 +47,9 @@ AM2320Controller am2320Controller;
 ACController acController(IR_LED_PIN);
 #endif
 
+WiFiClient wclient;
+PubSubClient pubSubClient(wclient);
+
 void setup() {
   Serial.begin(115200);
   chipId = ACCESSORY_NAME + String(ESP.getChipId());
@@ -54,9 +64,12 @@ void setup() {
     delay(3000);
     //reset and try again
     ESP.reset();
-     delay(5000);
+    delay(5000);
   }
 
+  pubSubClient.setServer(mqtt_server, 1883);
+  pubSubClient.connect(chipId.c_str(), mqttuser, mqttpass);
+  
   //setup OTA
   ArduinoOTA.setPort(8266);
   ArduinoOTA.setHostname(chipId.c_str());
@@ -87,7 +100,12 @@ void setup() {
 void loop() {
   ArduinoOTA.handle();
   my_homekit_loop();
-
+  if (!pubSubClient.loop()) {
+    if (pubSubClient.connect(chipId.c_str(), mqttuser, mqttpass))
+      LOG_D("connected to MQTT server");
+    else
+      LOG_D("Could not connect to MQTT server");
+  }
 }
 
 //==============================
@@ -159,6 +177,7 @@ void my_homekit_setup() {
     homekit_characteristic_notify(&cha_temperature, cha_temperature.value);
     cha_humidity.value.float_value = h;
     homekit_characteristic_notify(&cha_humidity, cha_humidity.value);
+    postToLog( t, h);
   });
   am2320Controller.begin(SDA_PIN, SCL_PIN);
 #endif
@@ -166,11 +185,10 @@ void my_homekit_setup() {
   acController.setCallback([&](float temperature, float humidity,  CURRENT_C_H_State currentState) {
     cha_temperature.value.float_value = temperature;
     homekit_characteristic_notify(&cha_temperature, cha_temperature.value);
-
     cha_humidity.value.float_value = humidity;
     homekit_characteristic_notify(&cha_humidity, cha_humidity.value);
+    postToLog( temperature, humidity);
 
-  
     //notify current state
     cha_current_state.value.uint8_value = (uint8_t)currentState;
     homekit_characteristic_notify(&cha_current_state, cha_current_state.value);
@@ -306,15 +324,15 @@ void set_rotation_speed(const homekit_value_t v) {
   acController.SetRotationSpeed(rotation_speed);
 }
 
-void set_active(const homekit_value_t v){
-   bool toActive = v.bool_value;
+void set_active(const homekit_value_t v) {
+  bool toActive = v.bool_value;
   cha_active.value.bool_value = toActive; //sync the value
   LOG_D("Active set to:%i", toActive);
-  if(toActive)
+  if (toActive)
     acController.SetActive();
   else
     acController.SetInactive();
-  
+
 }
 
 void set_swing_mode(const homekit_value_t v) {
@@ -328,3 +346,14 @@ void set_swing_mode(const homekit_value_t v) {
   }
 }
 #endif
+
+void postToLog(float t, float h) {
+  StaticJsonDocument<800> json;
+  json["name"] = chipId.c_str();
+  json["temperature"] = t;
+  json["humidity"] = h;
+  String jsonString;
+  serializeJson(json, jsonString);
+  if (pubSubClient.publish(logTopic, jsonString.c_str()))
+    LOG_D("Solar Panel Service Added");
+}

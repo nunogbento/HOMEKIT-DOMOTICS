@@ -66,10 +66,11 @@ class ACController {
               Ac_Activate();
             else
               Ac_Power_Down();
-            if (callback)
-              callback(t, h, currentHeaterCoolerState);
+
           }
         }
+        if (callback)
+          callback(t, h, currentHeaterCoolerState);
       });
     }
 
@@ -199,7 +200,7 @@ class ACController {
         Ac_Activate();
       else
         Ac_Power_Down();
-        
+
       if (callback)
         callback(CurrentTemperature(), CurrentHumidity(),  currentHeaterCoolerState);
     }
