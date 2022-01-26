@@ -58,7 +58,7 @@ class LedController {
 
     void TurnOn() {
       is_on = true;
-      if (Brightness == 0 && type == DIMMABLELED)
+      if (Brightness == 0 && type > ONOFFLED)
         Brightness = 100;
       Update();
     }

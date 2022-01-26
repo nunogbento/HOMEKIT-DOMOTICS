@@ -32,6 +32,7 @@ void LedController::Update() {
         analogWrite(W_pin, map(Brightness, 0, 100, 0, 255));
       else
         digitalWrite(W_pin, 1);
+
     }
   }
 }

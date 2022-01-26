@@ -39,7 +39,6 @@ LedController LCA(RED_LedPin, GREEN_LedPin, BLUE_LedPin);
 LedController LCA(RED_LedPin, GREEN_LedPin, BLUE_LedPin, WHITE_LedPin);
 #endif
 
-
 #if defined(_TH_) && !defined(_AC_)
 AM2320Controller am2320Controller;
 #endif

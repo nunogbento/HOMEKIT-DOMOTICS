@@ -1,6 +1,6 @@
 #ifndef CONFIGURATION_H_
 #define CONFIGURATION_H_
-#include <Arduino.h>
+
 
 //#define _RGB_
 #define _RGBW_
@@ -19,7 +19,6 @@
 #define RED_LedPin 16
 #define GREEN_LedPin 14
 #define BLUE_LedPin 12
-
 
 #define SDA_PIN 4
 #define SCL_PIN 5
