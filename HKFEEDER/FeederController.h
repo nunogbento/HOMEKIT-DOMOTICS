@@ -4,10 +4,10 @@
 #include "configuration.h"
 #include <Servo.h>
 
-volatile bool Feeder_Position_Sensor_Aligned = 0;
+volatile bool Feeder_Position_Sensor_Aligned = false;
 
 IRAM_ATTR void handleInterrupt() {
-  Feeder_Position_Sensor_Aligned = 1;
+  Feeder_Position_Sensor_Aligned = true;
 }
 
 typedef std::function<void(bool isOn)> switch_callback;
