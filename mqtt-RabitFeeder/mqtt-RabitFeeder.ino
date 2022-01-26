@@ -104,7 +104,7 @@ void setup() {
   wifiManager.autoConnect(chipId.c_str());
 
   ArduinoOTA.setPort(8266);
-  ArduinoOTA.setHostname(chipId.c_str());
+  ArduinoOTA.setHostname("RABIT FEEDER"+chipId.c_str());
   // No authentication by default
   // ArduinoOTA.setPassword((const char *)"123");
   ArduinoOTA.onStart([]() {
@@ -392,4 +392,3 @@ void writeStringToEEPROM(String x, int pos) {
     EEPROM.write(n, x[n - pos]);
   }
 }
-

@@ -99,6 +99,7 @@ class SolarPanelController {
         serializeJson(powerStatusJson, powerStatusJsonString);
         Serial.println(powerStatusJsonString.c_str());
         pubSubClient.publish(TelemetryTopic.c_str(), powerStatusJsonString.c_str());
+        
         if (callback)
           callback(currentTemperature, currentSolarState,  currentElectricState);
       }

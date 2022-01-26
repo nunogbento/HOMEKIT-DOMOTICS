@@ -3,13 +3,13 @@
 
 
 //#define _RGB_
-#define _RGBW_
-//#define _DIMMER_
+//#define _RGBW_
+#define _DIMMER_
 //#define _DUAL_
 #define _AC_
 //#define _TH_
 
-#define ACCESSORY_NAME "Presence Light"
+#define ACCESSORY_NAME "Master Bed Strip"
 #define IR_LED_PIN 10
 
 #define L1PIN 13
