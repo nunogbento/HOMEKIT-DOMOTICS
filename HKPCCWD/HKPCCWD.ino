@@ -1,21 +1,13 @@
 #include <Arduino.h>
-#if defined(ESP8266)
 #include <ESP8266WiFi.h>
-#elif defined(ESP32)
-#include <WiFi.h>
-#endif
 #include <ArduinoOTA.h>
 #include <WiFiManager.h>
-
 #include "configuration.h"
 #include <arduino_homekit_server.h>
 #include "PCCWDController.h"
 
 String chipId;
 PCCWDController pccwdController(Serial);
-
-
-
 
 void setup() {
  
@@ -98,94 +90,98 @@ extern "C" homekit_characteristic_t cha_programmable_switch_event_8;
 extern "C" homekit_characteristic_t cha_programmable_switch_event_9;
 
 
-
-
-
 void my_homekit_setup() {
-  cha_on_0.setter = [&](const homekit_value_t v) {
+  cha_on_0.setter = [](const homekit_value_t v) {
     bool on = v.bool_value;
     cha_on_0.value.bool_value = on; //sync the value
     pccwdController.setOnSate(OF8Wd_ADDRESS,  on);
   };
-  cha_on_1.setter = [&](const homekit_value_t v) {
+
+  cha_on_1.setter = [](const homekit_value_t v) {
     bool on = v.bool_value;
     cha_on_1.value.bool_value = on; //sync the value
     pccwdController.setOnSate(OF8Wd_ADDRESS + 1,  on);
   };
-  cha_on_2.setter = [&](const homekit_value_t v) {
+
+  cha_on_2.setter = [](const homekit_value_t v) {
     bool on = v.bool_value;
     cha_on_2.value.bool_value = on; //sync the value
     pccwdController.setOnSate(OF8Wd_ADDRESS + 2,  on);
   };
-  cha_on_3.setter = [&](const homekit_value_t v) {
+
+  cha_on_3.setter = [](const homekit_value_t v) {
     bool on = v.bool_value;
     cha_on_3.value.bool_value = on; //sync the value
     pccwdController.setOnSate(OF8Wd_ADDRESS + 3,  on);
   };
-  cha_on_4.setter = [&](const homekit_value_t v) {
+
+  cha_on_4.setter = [](const homekit_value_t v) {
     bool on = v.bool_value;
     cha_on_4.value.bool_value = on; //sync the value
     pccwdController.setOnSate(OF8Wd_ADDRESS + 4,  on);
   };
-  cha_on_5.setter = [&](const homekit_value_t v) {
+
+  cha_on_5.setter = [](const homekit_value_t v) {
     bool on = v.bool_value;
     cha_on_5.value.bool_value = on; //sync the value
     pccwdController.setOnSate(OF8Wd_ADDRESS + 5,  on);
   };
-  cha_on_6.setter = [&](const homekit_value_t v) {
+
+  cha_on_6.setter = [](const homekit_value_t v) {
     bool on = v.bool_value;
     cha_on_6.value.bool_value = on; //sync the value
     pccwdController.setOnSate(OF8Wd_ADDRESS + 6,  on);
   };
-  cha_on_7.setter = [&](const homekit_value_t v) {
+  
+  cha_on_7.setter = [](const homekit_value_t v) {
     bool on = v.bool_value;
     cha_on_7.value.bool_value = on; //sync the value
     pccwdController.setOnSate(OF8Wd_ADDRESS + 7,  on);
   };
 
-  cha_programmable_switch_event_0.getter =  [&]() {
+  cha_programmable_switch_event_0.getter =  []() {
     // Should always return "null" for reading, see HAP section 9.75
     return HOMEKIT_NULL_CPP();
   };
 
-  cha_programmable_switch_event_1.getter =  [&]() {
+  cha_programmable_switch_event_1.getter =  []() {
     // Should always return "null" for reading, see HAP section 9.75
     return HOMEKIT_NULL_CPP();
   };
-  cha_programmable_switch_event_2.getter =  [&]() {
+  cha_programmable_switch_event_2.getter =  []() {
     // Should always return "null" for reading, see HAP section 9.75
     return HOMEKIT_NULL_CPP();
   };
-  cha_programmable_switch_event_3.getter =  [&]() {
+  cha_programmable_switch_event_3.getter =  []() {
     // Should always return "null" for reading, see HAP section 9.75
     return HOMEKIT_NULL_CPP();
   };
-  cha_programmable_switch_event_4.getter =  [&]() {
+  cha_programmable_switch_event_4.getter =  []() {
     // Should always return "null" for reading, see HAP section 9.75
     return HOMEKIT_NULL_CPP();
   };
-  cha_programmable_switch_event_5.getter =  [&]() {
+  cha_programmable_switch_event_5.getter =  []() {
     // Should always return "null" for reading, see HAP section 9.75
     return HOMEKIT_NULL_CPP();
   };
-  cha_programmable_switch_event_6.getter =  [&]() {
+  cha_programmable_switch_event_6.getter =  []() {
     // Should always return "null" for reading, see HAP section 9.75
     return HOMEKIT_NULL_CPP();
   };
-  cha_programmable_switch_event_7.getter =  [&]() {
+  cha_programmable_switch_event_7.getter =  []() {
     // Should always return "null" for reading, see HAP section 9.75
     return HOMEKIT_NULL_CPP();
   };
-  cha_programmable_switch_event_8.getter =  [&]() {
+  cha_programmable_switch_event_8.getter =  []() {
     // Should always return "null" for reading, see HAP section 9.75
     return HOMEKIT_NULL_CPP();
   };
-  cha_programmable_switch_event_9.getter =  [&]() {
+  cha_programmable_switch_event_9.getter =  []() {
     // Should always return "null" for reading, see HAP section 9.75
     return HOMEKIT_NULL_CPP();
   };
 
-  pccwdController.setProgrammableSwitchEvent_callback([&](uint8_t id, PressType pressType) {
+  pccwdController.setProgrammableSwitchEvent_callback([](uint8_t id, PressType pressType) {
   
     uint8_t cha_value = pressType;
 

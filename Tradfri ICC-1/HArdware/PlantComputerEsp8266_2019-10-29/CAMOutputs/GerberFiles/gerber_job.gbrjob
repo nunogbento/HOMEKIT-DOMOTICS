@@ -1,0 +1,24 @@
+{
+    "Header": {
+        "Comment": "All values are metric (mm)",
+        "CreationDate": "2019-10-29T18:47:15Z",
+        "GenerationSoftware": {
+            "Application": "EAGLE",
+            "Vendor": "Autodesk",
+            "Version": "9.5.0"
+        },
+        "Part": "Single"
+    },
+    "Overall": {
+        "BoardThickness": 1.57,
+        "LayerNumber": 2,
+        "Name": {
+            "ProjectId": "PlantComputerEsp8266"
+        },
+        "Owner": "Nuno Bento <nunogbento@gmail.com>",
+        "Size": {
+            "X": 49.657,
+            "Y": 91.43
+        }
+    }
+}

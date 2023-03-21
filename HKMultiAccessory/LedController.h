@@ -28,6 +28,7 @@ class LedController {
   public:
 
     LedController(u_int w_pin, bool dimmable) {
+      analogWriteFreq(300);
       type = (dimmable) ? DIMMABLELED : ONOFFLED;
       W_pin = w_pin;
       pinMode(W_pin, OUTPUT);
