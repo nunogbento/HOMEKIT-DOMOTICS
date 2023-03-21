@@ -354,5 +354,5 @@ void postToLog(float t, float h) {
   String jsonString;
   serializeJson(json, jsonString);
   if (pubSubClient.publish(logTopic, jsonString.c_str()))
-    LOG_D("Solar Panel Service Added");
+    LOG_D("Solar Panel data posted");
 }

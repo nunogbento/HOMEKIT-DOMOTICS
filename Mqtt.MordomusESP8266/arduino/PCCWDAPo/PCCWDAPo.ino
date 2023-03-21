@@ -320,7 +320,7 @@ void handleFileUpload() { // upload a new file to the SPIFFS
     }
   }
 }
-
+//{"name"="PCCWDAPI11027766_8","service_name"="Valve 8","service"="Valve","ValveType","default"}
 bool addAccessory(byte type, byte address) {
   StaticJsonDocument<800> addAccessoryJson;
   String accessoryId = chipId + "_" + address;

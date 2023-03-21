@@ -11,7 +11,14 @@
 #include <PubSubClient.h>
 
 
-enum Current_State {
+
+enum TARGET_C_H_State {
+  AUTO = 0,
+  HEAT = 1,
+  COOL = 2,
+};
+
+enum CURRENT_C_H_State {
   INACTIVE = 0,
   IDLE = 1,
   HEATING = 2,
@@ -22,24 +29,24 @@ const float FACTOR = 60.6F; //100A/50ma   33ohm burden  100A/1.65v
 
 const float multiplier = 0.125;
 
-// pooling variables
-const unsigned long MeasureInterval = 2 * 60 * 1000UL;
-static unsigned long lastSampleTime = 0 - MeasureInterval;  // initialize such that a reading is due the first time through loop()
 
 
-typedef std::function<void(float temperature, Current_State currentState_s, Current_State currentState_e)> SolarPanel_callback;
+typedef std::function<void(float temperature, CURRENT_C_H_State currentState_s, CURRENT_C_H_State currentState_e,float iE,float iS)> SolarPanel_callback;
 
 class SolarPanelController {
 
     SolarPanel_callback callback;
+    String _chipId;
+    float adcSamples_s[SAMPLE_BUFFER_SIZE];
+    float adcSamples_e[SAMPLE_BUFFER_SIZE];
+    int sampleindex = 0;
+    float currentTemperature = 0;
 
-    float targetSolarTemperature = 50;
-    float targetElectricTemperature = 32;
+    long lastMeasureTime = 0;
+    long lastSampleTime = 0;
 
-    float currentTemperature = 32;
-
-    Current_State currentSolarState = IDLE;
-    Current_State currentElectricState = IDLE;
+    CURRENT_C_H_State currentSolarState = IDLE;
+    CURRENT_C_H_State currentElectricState = IDLE;
 
     // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
     OneWire oneWire;
@@ -47,22 +54,26 @@ class SolarPanelController {
     // Pass our oneWire reference to Dallas Temperature.
     DallasTemperature sensors;
     Adafruit_ADS1115 ads;
-    WiFiClient wclient;
-    PubSubClient pubSubClient;
+   
     String TelemetryTopic;
 
 
   public:
-    SolarPanelController(): oneWire(ONE_WIRE_BUS), sensors(&oneWire) , pubSubClient(wclient) {}
+    SolarPanelController(): oneWire(ONE_WIRE_BUS), sensors(&oneWire)  {}
 
-    void begin(int sda, int scl,String chipId) {
+    void begin(String chipId) {
 
-      TelemetryTopic =chipId+ "/from";
-      ads.setGain(GAIN_ONE);        // 0.125mv
+      _chipId = chipId;
 
-      Wire.begin( sda, scl);
 
-      pubSubClient.setServer(MQTT_SERVER, 1883);
+      sensors.begin();
+
+      if (ads.begin()) {
+        ads.setGain(GAIN_ONE);// 0.125mv
+        LOG_D("adc Intialized.");
+      }
+
+     
 
 
     }
@@ -74,80 +85,67 @@ class SolarPanelController {
 
 
     void Loop() {
+
       unsigned long now = millis();
-      if (now - lastSampleTime >= MeasureInterval)
+
+
+      if (now - lastSampleTime >= SAMPLE_INTERVAL)
+      {
+        lastSampleTime=now;
+        collectSamples();
+      }
+
+      if (now - lastMeasureTime >= MEASUREMENT_INTERVAL)
       {
 
-        lastSampleTime += MeasureInterval;
-        StaticJsonDocument<100> powerStatusJson;
-
+        lastMeasureTime = now;
+        
 
         sensors.requestTemperatures(); // Send the command to get temperatures
         currentTemperature = sensors.getTempCByIndex(0);
 
-        powerStatusJson["temp"] = currentTemperature;
+       
 
-        float currentRMS = getAmps(0);
-        currentElectricState = (currentRMS > 1) ? HEATING : IDLE;
-        powerStatusJson["iCh1"] = currentRMS;
+        LOG_D("Samples index: %i", sampleindex);
+        float currentRMS_e = getAmps(0);
 
-        currentRMS = getAmps(1);
-        currentSolarState = (currentRMS > 0.3F) ? HEATING : IDLE;
-        powerStatusJson["iCh2"] = currentRMS;
+        LOG_D("Amps calculated Electric: %f", currentRMS_e);
+        currentElectricState = (currentRMS_e > 1.0F) ? HEATING : IDLE;
+       
 
-        String powerStatusJsonString;
-        serializeJson(powerStatusJson, powerStatusJsonString);
-        Serial.println(powerStatusJsonString.c_str());
-        pubSubClient.publish(TelemetryTopic.c_str(), powerStatusJsonString.c_str());
-        
+        float currentRMS_s = getAmps(1);
+        LOG_D("Amps calculated Solar: %f", currentRMS_s);
+        currentSolarState = (currentRMS_s > 0.1F) ? HEATING : IDLE;
+      
+       
         if (callback)
-          callback(currentTemperature, currentSolarState,  currentElectricState);
+          callback(currentTemperature, currentSolarState,  currentElectricState,currentRMS_e,currentRMS_s);
+
+        
       }
 
     }
-
-
-
-
-    void SetTargetElecticTemperature(float temperature) {
-      targetElectricTemperature = temperature;
-    }
-
-    void SetTargetSolarTemperature(float temperature) {
-      targetSolarTemperature = temperature;
-    }
-
-
-
-
 
 
 
   private:
+
+
     float getAmps(uint8_t channel)
     {
-      float voltage;
-      float amps;
       float sum = 0;
-      long startMillis = millis();
-      int counter = 0;
 
-      while (millis() - startMillis < 1000)
-      {
-        if (channel == 0)
-          voltage = ads.readADC_Differential_0_1() * multiplier;
-        else
-          voltage = ads.readADC_Differential_2_3() * multiplier;
-        amps = voltage * FACTOR;
-        amps /= 1000.0;
-
-        sum += sq(amps);
-        counter++;
+      for (int i = 0; i < SAMPLE_BUFFER_SIZE; i++) {
+        sum += sq((channel == 0) ? adcSamples_e[i] : adcSamples_s[i]);
       }
+      return sqrt(sum / SAMPLE_BUFFER_SIZE);
+    }
 
 
-      amps = sqrt(sum / counter);
-      return amps;
+    void collectSamples() {
+      adcSamples_e[sampleindex] = ads.readADC_Differential_0_1() * multiplier * FACTOR / 1000.0;
+      adcSamples_s[sampleindex] = ads.readADC_Differential_2_3() * multiplier * FACTOR / 1000.0;
+      sampleindex = (sampleindex + 1) % SAMPLE_BUFFER_SIZE;
     }
 
 };

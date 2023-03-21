@@ -69,11 +69,11 @@ void setup() {
   chipId = String(serviceType) + String(ESP.getChipId());
   TelemetryTopic=chipId+"/from";
   sensors.begin();
-
+  Wire.begin( 5,4);
   ads.setGain(GAIN_ONE);        // 0.125mv
   //ads.begin();
 
-  Wire.begin( 5,4);
+  
 
   StaticJsonDocument<200> jsonReachability;
   jsonReachability["name"] = chipId.c_str();

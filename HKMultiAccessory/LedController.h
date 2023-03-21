@@ -3,7 +3,7 @@
 
 #include "configuration.h"
 
-analogWriteFreq(300);
+
 
 enum LedType {
   ONOFFLED = 0,

@@ -12,13 +12,19 @@
 
 String chipId;
 
-
+const char* mqtt_server = MQTT_SERVER;
+const char* mqtt_user = MQTT_USER;
+const char* mqtt_pass = MQTT_PASS;
+const char* logTopic = LOG_TOPIC;
 
 SolarPanelController solarPanelController;
 
+WiFiClient wclient;
+PubSubClient pubSubClient(wclient);
 
 void setup() {
   Serial.begin(115200);
+  Wire.begin( SDA_PIN, SCL_PIN);
   chipId = ACCESSORY_NAME + String(ESP.getChipId());
   //Local intialization. Once its business is done, there is no need to keep it around
   WiFiManager wifiManager;
@@ -33,6 +39,10 @@ void setup() {
     ESP.reset();
     delay(5000);
   }
+
+  pubSubClient.setServer(mqtt_server, 1883);
+  if (pubSubClient.connect(chipId.c_str(), mqtt_user, mqtt_pass))
+    LOG_D("pubsub mqtt connected.");
 
   //setup OTA
   ArduinoOTA.setPort(8266);
@@ -57,8 +67,11 @@ void setup() {
     else if (error == OTA_END_ERROR) LOG_D("End Failed");
   });
   ArduinoOTA.begin();
+
   //homekit_storage_reset(); // to remove the previous HomeKit pairing storage when you first run this new HomeKit example
-  solarPanelController.begin(SDA_PIN, SCL_PIN,chipId);
+
+
+  solarPanelController.begin(chipId);
 
   my_homekit_setup();
 }
@@ -66,6 +79,12 @@ void setup() {
 void loop() {
   ArduinoOTA.handle();
   my_homekit_loop();
+  if (!pubSubClient.loop()) {
+    if (pubSubClient.connect(chipId.c_str(), mqtt_user, mqtt_pass))
+      LOG_D("connected to MQTT server");
+    else
+      LOG_D("Could not connect to MQTT server");
+  }
 
 }
 
@@ -77,10 +96,13 @@ void loop() {
 // access your HomeKit characteristics defined in my_accessory.c
 
 extern "C" homekit_server_config_t accessory_config;
+
+extern "C" homekit_characteristic_t cha_active_s;
+extern "C" homekit_characteristic_t cha_active_e;
 extern "C" homekit_characteristic_t cha_c_temperature_s;
 extern "C" homekit_characteristic_t cha_c_temperature_e;
-extern "C" homekit_characteristic_t cha_t_temperature_s;
-extern "C" homekit_characteristic_t cha_t_temperature_e;
+
+
 extern "C" homekit_characteristic_t cha_current_state_s;
 extern "C" homekit_characteristic_t cha_current_state_e;
 extern "C" homekit_characteristic_t cha_target_state_s;
@@ -95,7 +117,7 @@ static uint32_t next_heap_millis = 0;
 
 void my_homekit_setup() {
 
-  solarPanelController.setCallback([&](float temperature, Current_State currentState_s, Current_State currentState_e) {
+  solarPanelController.setCallback([&](float temperature, CURRENT_C_H_State currentState_s, CURRENT_C_H_State currentState_e,float iE,float iS) {
     cha_c_temperature_s.value.float_value = temperature;
     homekit_characteristic_notify(&cha_c_temperature_s, cha_c_temperature_s.value);
 
@@ -113,13 +135,15 @@ void my_homekit_setup() {
     homekit_characteristic_notify(&cha_current_state_e, cha_current_state_e.value);
     LOG_D("Notify Current  State:%i", cha_current_state_e.value.uint8_value);
 
+    postToLog(temperature, iE, iS, currentState_e, currentState_s);
+
   });
 
-  
+  cha_active_e.setter = set_active_s;
+  cha_active_s.setter = set_active_e;
   cha_target_state_s.setter = set_target_state_s;
   cha_target_state_e.setter = set_target_state_e;
-  cha_t_temperature_s.setter = set_target_temperature_s;
-  cha_t_temperature_e.setter = set_target_temperature_e;
+
 
   arduino_homekit_setup(&accessory_config);
 }
@@ -147,6 +171,7 @@ void set_target_state_e(const homekit_value_t v) {
 
   LOG_D("target  State:%i", state);
 }
+
 void set_target_state_s(const homekit_value_t v) {
   uint8_t state = v.uint8_value;
   cha_target_state_e.value.uint8_value = state; //sync the value
@@ -154,17 +179,30 @@ void set_target_state_s(const homekit_value_t v) {
   LOG_D("target  State:%i", state);
 }
 
+void set_active_e(const homekit_value_t v) {
+  bool toActive = v.bool_value;
+  cha_active_e.value.bool_value = toActive; //sync the value
+  LOG_D("Active set to:%i", toActive);
 
-void set_target_temperature_e(const homekit_value_t v) {
-  float htt = v.float_value;
-  cha_t_temperature_e.value.float_value = htt; //sync the value
-  LOG_D("Heating threshold Temperature set: %f", htt);
-  solarPanelController.SetTargetElecticTemperature(htt);
 }
 
-void set_target_temperature_s(const homekit_value_t v) {
-  float ctt = v.float_value;
-  cha_t_temperature_s.value.float_value = ctt; //sync the value
-  LOG_D("Cooling threshold Temperature set: %f", ctt);
-  solarPanelController.SetTargetSolarTemperature(ctt);
+void set_active_s(const homekit_value_t v) {
+  bool toActive = v.bool_value;
+  cha_active_s.value.bool_value = toActive; //sync the value
+  LOG_D("Active set to:%i", toActive);
+}
+
+void postToLog(float t, float iE,float iS, CURRENT_C_H_State sE,CURRENT_C_H_State sS) {
+  StaticJsonDocument<800> json;
+
+  json["name"] = chipId.c_str();
+  json["temperature"] = t;
+  json["CurrentStateElectric"] = sE;
+  json["CurentRMSE"] = iE;
+  json["CurrentRMSS"] = iS;
+  json["CurrentStateSolar"] = sS;
+  String jsonString;
+  serializeJson(json, jsonString);
+  if (pubSubClient.publish(logTopic, jsonString.c_str()))
+    LOG_D("Solar Panel data posted");
 }
