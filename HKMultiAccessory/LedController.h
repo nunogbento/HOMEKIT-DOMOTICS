@@ -3,7 +3,7 @@
 
 #include "configuration.h"
 
-analogWriteFreq(300);
+
 
 enum LedType {
   ONOFFLED = 0,
@@ -28,6 +28,7 @@ class LedController {
   public:
 
     LedController(u_int w_pin, bool dimmable) {
+      analogWriteFreq(300);
       type = (dimmable) ? DIMMABLELED : ONOFFLED;
       W_pin = w_pin;
       pinMode(W_pin, OUTPUT);
