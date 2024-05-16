@@ -4,8 +4,9 @@
 
 
 
-#define ACCESSORY_NAME "SPINKLERS"
+#define ACCESSORY_NAME "SPRINKLERS"
 
+#define DEFAULT_DURATION 300 
 #define VALVE_1_TYPE 1
 #define VALVE_2_TYPE 1
 #define VALVE_3_TYPE 1
