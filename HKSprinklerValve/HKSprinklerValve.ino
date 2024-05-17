@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include "ValveController.h"
 
-
 #include <ESP8266WiFi.h>
 
 #include <ArduinoOTA.h>
@@ -12,7 +11,6 @@
 #include "configuration.h"
 #include "ValveController.h"
 
-
 String chipId;
 const char* mqtt_server = "192.168.1.109";
 const char* mqttuser = "";
@@ -21,16 +19,13 @@ const char* mqttpass = "";
 const char* logTopic = "irrigation/update/valve";
 const char* intopic = "irrigation/set/valve";
 
-
 ValveController VC1(VALVE_1_PIN, DEFAULT_DURATION);
 ValveController VC2(VALVE_2_PIN, DEFAULT_DURATION);
 ValveController VC3(VALVE_3_PIN, DEFAULT_DURATION);
 ValveController VC4(VALVE_4_PIN, DEFAULT_DURATION);
 
-
 WiFiClient wclient;
 PubSubClient pubSubClient(wclient);
-
 
 void pubSubcallback(char* topic, byte* payload, unsigned int length) {
 }
@@ -152,6 +147,11 @@ void my_homekit_setup() {
     homekit_characteristic_notify(&cha_active_1, cha_active_1.value);
   });
 
+  VC1.setInUseChangeCallback([&](u_int8_t inUse) {
+    cha_in_use_1.value.uint8_value = inUse;
+    homekit_characteristic_notify(&cha_in_use_1, cha_in_use_1.value);
+  });
+
   VC1.setRemainingDurationChangeCallback([&](u_int16_t duration) {
     cha_valve_r_d_1.value.uint16_value = duration;
     homekit_characteristic_notify(&cha_valve_r_d_1, cha_valve_r_d_1.value);
@@ -161,6 +161,11 @@ void my_homekit_setup() {
   VC2.setActiveChangeCallback([&](u_int8_t active) {
     cha_active_2.value.uint8_value = active;
     homekit_characteristic_notify(&cha_active_2, cha_active_2.value);
+  });
+
+  VC2.setInUseChangeCallback([&](u_int8_t inUse) {
+    cha_in_use_2.value.uint8_value = inUse;
+    homekit_characteristic_notify(&cha_in_use_2, cha_in_use_2.value);
   });
 
   VC2.setRemainingDurationChangeCallback([&](u_int16_t duration) {
@@ -174,6 +179,11 @@ void my_homekit_setup() {
     homekit_characteristic_notify(&cha_active_3, cha_active_3.value);
   });
 
+  VC3.setInUseChangeCallback([&](u_int8_t inUse) {
+    cha_in_use_3.value.uint8_value = inUse;
+    homekit_characteristic_notify(&cha_in_use_3, cha_in_use_3.value);
+  });
+
   VC3.setRemainingDurationChangeCallback([&](u_int16_t duration) {
     cha_valve_r_d_3.value.uint16_value = duration;
     homekit_characteristic_notify(&cha_valve_r_d_3, cha_valve_r_d_3.value);
@@ -183,6 +193,11 @@ void my_homekit_setup() {
   VC4.setActiveChangeCallback([&](u_int8_t active) {
     cha_active_4.value.uint8_value = active;
     homekit_characteristic_notify(&cha_active_4, cha_active_4.value);
+  });
+
+  VC4.setInUseChangeCallback([&](u_int8_t inUse) {
+    cha_in_use_4.value.uint8_value = inUse;
+    homekit_characteristic_notify(&cha_in_use_4, cha_in_use_4.value);
   });
 
   VC4.setRemainingDurationChangeCallback([&](u_int16_t duration) {
@@ -214,8 +229,8 @@ void set_active_1(const homekit_value_t v) {
     VC1.TurnOff();
     LOG_D("VALVE 1 inactive");
   }
-  cha_in_use_1.value.uint8_value = active;
-  homekit_characteristic_notify(&cha_in_use_1, cha_in_use_1.value);
+  //cha_in_use_1.value.uint8_value = active;
+  //homekit_characteristic_notify(&cha_in_use_1, cha_in_use_1.value);
 }
 
 void set_d_1(const homekit_value_t v) {
@@ -235,8 +250,8 @@ void set_active_2(const homekit_value_t v) {
     VC2.TurnOff();
     LOG_D("VALVE 2 inactive");
   }
-  cha_in_use_2.value.uint8_value = active;
-  homekit_characteristic_notify(&cha_in_use_2, cha_in_use_2.value);
+  //cha_in_use_2.value.uint8_value = active;
+  //homekit_characteristic_notify(&cha_in_use_2, cha_in_use_2.value);
 }
 
 void set_d_2(const homekit_value_t v) {
@@ -255,8 +270,8 @@ void set_active_3(const homekit_value_t v) {
     VC3.TurnOff();
     LOG_D("VALVE 3 inactive");
   }
-  cha_in_use_3.value.uint8_value = active;
-  homekit_characteristic_notify(&cha_in_use_3, cha_in_use_3.value);
+  //cha_in_use_3.value.uint8_value = active;
+  //homekit_characteristic_notify(&cha_in_use_3, cha_in_use_3.value);
 }
 void set_d_3(const homekit_value_t v) {
   uint16_t duration = v.uint16_value;
@@ -274,8 +289,8 @@ void set_active_4(const homekit_value_t v) {
     VC4.TurnOff();
     LOG_D("VALVE 4 inactive");
   }
-  cha_in_use_4.value.uint8_value = active;
-  homekit_characteristic_notify(&cha_in_use_4, cha_in_use_4.value);
+  //cha_in_use_4.value.uint8_value = active;
+  //homekit_characteristic_notify(&cha_in_use_4, cha_in_use_4.value);
 }
 
 
