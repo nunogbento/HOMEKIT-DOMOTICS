@@ -29,6 +29,8 @@
 #define VALVE 5
 #define SMOKESENSOR 6
 #define COSENSOR 7
+#define NOMOTIONSENSOR 8
+#define IRRIGATIONVALVE 9
 
 byte preamble = 0xAA;
 byte oncmd = 0x64;
@@ -176,7 +178,6 @@ void handleSyncAccessories() {
       addAccessory(PccwdAccessories[i][0], i);
     }
   };
-  
   webSrv.send( 200, "text/html", "Accessories Sync with Hombridge completed");
 }
 
@@ -334,6 +335,8 @@ void handleFileUpload() { // upload a new file to the SPIFFS
 }
 //{"name"="PCCWDAPI11027766_8","service_name"="Valve 8","service"="Valve","ValveType","default"}
 bool addAccessory(byte type, byte address) {
+  if(address<0)return false;
+  if(type>2 && address >16) return false;
   StaticJsonDocument<800> addAccessoryJson;
   String accessoryId = chipId + "_" + address;
   addAccessoryJson["name"] = accessoryId.c_str();
@@ -349,27 +352,27 @@ bool addAccessory(byte type, byte address) {
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "StatelessProgrammableSwitch";
   }
-  else if (type == IRSENSOR && address <= 16 && address > 0) {
+  else if (type == IRSENSOR || type == NOMOTIONSENSOR) {
     String serviceName = String("Motion Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "MotionSensor";
   }
-  else if (type == LEAKSENSOR && address <= 16 && address > 0) {
+  else if (type == LEAKSENSOR ) {
     String serviceName = String("Leak Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "LeakSensor"; 
   }
-  else if (type == VALVE && address <= 16 && address > 0) {
+  else if (type == VALVE ) {
     String serviceName = String("Valve ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "Valve";
     addAccessoryJson["ValveType"] = "default";
   }
-  else if (type == SMOKESENSOR && address <= 16 && address > 0) {
+  else if (type == SMOKESENSOR) {
     String serviceName = String("Smoke Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "SmokeSensor";
-  } else if (type == COSENSOR && address <= 16 && address > 0) {
+  } else if (type == COSENSOR ) {
     String serviceName = String("CarbonMonoxide Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "CarbonMonoxideSensor";
@@ -382,16 +385,11 @@ bool addAccessory(byte type, byte address) {
 }
 
 void setupIO(byte type, byte address) {
-  if (type == IRSENSOR && address <= 16 && address > 0) {
+  if (address > 16 || address < 1) return;
+  else if (type == IRSENSOR || type == LEAKSENSOR || type == SMOKESENSOR || type == COSENSOR || type == NOMOTIONSENSOR) {
     mcp.pinMode(address - 1, INPUT_PULLUP);
-  } else if (type == LEAKSENSOR && address <= 16 && address > 0) {
-    mcp.pinMode(address - 1, INPUT_PULLUP);
-  } else if (type == VALVE && address <= 16 && address > 0) {
+  } else if (type == VALVE) {
     mcp.pinMode(address - 1, OUTPUT);
-  } else if (type == SMOKESENSOR && address <= 16 && address > 0) {
-    mcp.pinMode(address - 1, INPUT_PULLUP);
-  } else if (type == COSENSOR && address <= 16 && address > 0) {
-    mcp.pinMode(address - 1, INPUT_PULLUP);
   }
 }
 
@@ -539,14 +537,16 @@ void HadleIO() {
       analogWrite(WHITE_LedPin , map( PccwdAccessories[i][1], 0, 100, 0, 255) );
     }
 
-    int IOPinValue = mcp.digitalRead(i);
-    if (PccwdAccessories[address][0] == IRSENSOR) {
+    uint8_t IOPinValue = mcp.digitalRead(i);
+
+    if (PccwdAccessories[address][0] == IRSENSOR || PccwdAccessories[address][0] == NOMOTIONSENSOR) {
       serviceName = String("Motion Sensor ") + address;
-      if (IOPinValue != PccwdAccessories[address][1])
-      {
-        PccwdAccessories[address][1] = IOPinValue;
-        getAccessory(accessoryId.c_str(), serviceName.c_str(), "MotionDetected");
-      }
+      uint8_t _motionDetected = (PccwdAccessories[address][0] == IRSENSOR) ? IOPinValue : (IOPinValue == 0) ? 1: 0;
+      if (_motionDetected != PccwdAccessories[address][1])
+        {
+          PccwdAccessories[address][1] = _motionDetected;
+          getAccessory(accessoryId.c_str(), serviceName.c_str(), "MotionDetected");
+        }
     } else  if (PccwdAccessories[address][0] == SMOKESENSOR) {
       serviceName = String("Smoke Sensor ") + address;
       if (IOPinValue != PccwdAccessories[address][1])
