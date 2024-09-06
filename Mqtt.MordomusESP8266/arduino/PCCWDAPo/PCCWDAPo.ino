@@ -170,6 +170,16 @@ void handleResetAccessories() {
 }
 
 
+void handleSyncAccessories() {
+  for (int i = 0; i < 200; i += 1) {
+    if (PccwdAccessories[i][0] > 0) {
+      addAccessory(PccwdAccessories[i][0], i);
+    }
+  };
+  
+  webSrv.send( 200, "text/html", "Accessories Sync with Hombridge completed");
+}
+
 void StoreConfiguration() {
   File configFile = SPIFFS.open(CONFIG_FILE, "w");
   if (configFile) {
@@ -202,6 +212,7 @@ void handleAddAccessory() {
     data = (byte)webSrv.arg("data").toInt();
 
   if (addAccessory(type, address)) {
+    setupIO(type,address);
     PccwdAccessories[address][0] = type;
     PccwdAccessories[address][1] = data;
     StoreConfiguration();
@@ -342,42 +353,46 @@ bool addAccessory(byte type, byte address) {
     String serviceName = String("Motion Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "MotionSensor";
-    mcp.pinMode(address - 1, INPUT_PULLUP);
-   
   }
   else if (type == LEAKSENSOR && address <= 16 && address > 0) {
     String serviceName = String("Leak Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
-    addAccessoryJson["service"] = "LeakSensor";
-    mcp.pinMode(address - 1, INPUT_PULLUP);
-   
+    addAccessoryJson["service"] = "LeakSensor"; 
   }
   else if (type == VALVE && address <= 16 && address > 0) {
     String serviceName = String("Valve ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "Valve";
     addAccessoryJson["ValveType"] = "default";
-    mcp.pinMode(address - 1, OUTPUT);
   }
   else if (type == SMOKESENSOR && address <= 16 && address > 0) {
     String serviceName = String("Smoke Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "SmokeSensor";
-    mcp.pinMode(address - 1, INPUT_PULLUP);
-   
-
   } else if (type == COSENSOR && address <= 16 && address > 0) {
     String serviceName = String("CarbonMonoxide Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "CarbonMonoxideSensor";
-    mcp.pinMode(address - 1, INPUT_PULLUP);
-   
   }
 
   String addAccessoryJsonString;
   serializeJson(addAccessoryJson, addAccessoryJsonString);
   Log((char*)addAccessoryJsonString.c_str());
   return client.publish(addtopic, addAccessoryJsonString.c_str());
+}
+
+void setupIO(byte type, byte address) {
+  if (type == IRSENSOR && address <= 16 && address > 0) {
+    mcp.pinMode(address - 1, INPUT_PULLUP);
+  } else if (type == LEAKSENSOR && address <= 16 && address > 0) {
+    mcp.pinMode(address - 1, INPUT_PULLUP);
+  } else if (type == VALVE && address <= 16 && address > 0) {
+    mcp.pinMode(address - 1, OUTPUT);
+  } else if (type == SMOKESENSOR && address <= 16 && address > 0) {
+    mcp.pinMode(address - 1, INPUT_PULLUP);
+  } else if (type == COSENSOR && address <= 16 && address > 0) {
+    mcp.pinMode(address - 1, INPUT_PULLUP);
+  }
 }
 
 
@@ -619,12 +634,20 @@ void setup() {
 
   LoadConfiguration();
 
+  //setup IO ports
+  for (int i = 0; i < 200; i += 1) {
+    if (PccwdAccessories[i][0] > 0) {
+      setupIO(PccwdAccessories[i][0], i);
+    }
+  };
+
   client.setServer(mqtt_server, 1883);
 
   //SETUP HTTP
   webSrv.on("/add", HTTP_GET, handleAddAccessory);
   webSrv.on("/remove", HTTP_GET, handleRemoveAccessory);
   webSrv.on("/reset", HTTP_GET, handleResetAccessories);
+  webSrv.on("/Sync", HTTP_GET, handleSyncAccessories); //recreates all accessories in homebridge as configured
   webSrv.on("/turnon", HTTP_GET, handleTurnOn);
   webSrv.on("/turnoff", HTTP_GET, handleTurnOff);
   webSrv.on("/log", HTTP_GET, handleLog);
@@ -663,14 +686,6 @@ void loop() {
         client.setCallback(callback);
         client.subscribe(intopic);
         client.subscribe(gettopic);
-        //client.subscribe(mainttopic);
-        //addAccessory();
-        //setReachability()
-        for (int i = 0; i < 200; i += 1) {
-          if (PccwdAccessories[i][0] > 0) {
-            addAccessory(PccwdAccessories[i][0], i);
-          }
-        }
         Log("Connected to MQTT Server");
       }
     } else
@@ -744,8 +759,6 @@ void loop() {
     HadleIO();
     logger.process();
   }
-
-
   webSrv.handleClient();
 
 }
