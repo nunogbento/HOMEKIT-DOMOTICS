@@ -1,7 +1,5 @@
-
-
+#include <Adafruit_ADS1X15.h>
 #include <Wire.h>
-#include <Adafruit_ADS1015.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 
@@ -23,7 +21,7 @@
 #define M3_Pin 14
 #define M4_Pin 16
 
-#define CONFIG_FILE       "/accessories.conf"
+#define CONFIG_FILE "/accessories.conf"
 
 #define A_S_NOTINUSE 0
 #define A_S_AUTO 1
@@ -40,7 +38,7 @@
 
 byte PccwdAccessories[4][4];
 
-byte Pump_Pin[] = {M1_Pin, M2_Pin, M3_Pin, M4_Pin};
+byte Pump_Pin[] = { M1_Pin, M2_Pin, M3_Pin, M4_Pin };
 
 const char* mqtt_server = "192.168.1.109";
 uint16_t i;
@@ -67,7 +65,7 @@ String chipId;
 String jsonReachabilityString;
 
 
-const unsigned long IOInterval =  30000UL;
+const unsigned long IOInterval = 30000UL;
 
 static unsigned long lastIOTime = 0 - IOInterval;
 
@@ -80,28 +78,26 @@ PubSubClient client(wclient);
 
 File fsUploadFile;
 
-struct AppTrace
-{
+struct AppTrace {
   char content[256];
 };
 // create a new logger which will store records in files with names like
 // /apptrace/YYYYMMDD, keeping 1 day of history
 SPIFFSLogger<AppTrace> logger("/apptrace", 1);
 
-void Log(char* text) {
-  struct AppTrace data ;
+void Log(const char* text) {
+  struct AppTrace data;
   strcpy(data.content, text);
   logger.write(data);
-
 }
 
 SPIFFSLogData<AppTrace> traceData[25];
 char chunk[300];
 
 void handleClearLog() {
-  char  filename[40];
-  time_t today = time(nullptr) / 86400 * 86400; // remove the time part
-  struct tm *tinfo = gmtime(&today);
+  char filename[40];
+  time_t today = time(nullptr) / 86400 * 86400;  // remove the time part
+  struct tm* tinfo = gmtime(&today);
   sprintf_P(filename,
             "%s/%d%02d%02d",
             "/apptrace",
@@ -111,10 +107,10 @@ void handleClearLog() {
 
   if (SPIFFS.remove(filename)) {
     sprintf(chunk, "Removed Log File at: %s", filename);
-    webSrv.send( 200, "text/html", chunk);
+    webSrv.send(200, "text/html", chunk);
   } else {
     sprintf(chunk, "Failed to Remove Log File at: %s", filename);
-    webSrv.send( 400, "text/html", chunk);
+    webSrv.send(400, "text/html", chunk);
   }
 }
 
@@ -124,7 +120,7 @@ void handleLog() {
   size_t total = rowCount > 25 ? 25 : rowCount;
   webSrv.setContentLength(CONTENT_LENGTH_UNKNOWN);
   sprintf(chunk, "Log aT %d: Rows: %d\r\n", ctime(&now), rowCount);
-  webSrv.send( 200, "text/html", chunk);
+  webSrv.send(200, "text/html", chunk);
   size_t count = logger.readRows(traceData, now, rowCount - 1 - total, total);
   for (int i = count - 1; i >= 0; i--) {
     sprintf(chunk, "%s - %s \r\n",
@@ -139,7 +135,7 @@ void handleLog() {
 void handleAccessories() {
   webSrv.setContentLength(CONTENT_LENGTH_UNKNOWN);
 
-  webSrv.send( 200, "text/html", "Accessories: \n");
+  webSrv.send(200, "text/html", "Accessories: \n");
   for (int i = 0; i < 4; i++) {
     if (PccwdAccessories[i][A_S] > 0) {
       sprintf(chunk, "Address: %d --> Status: %d, HT: %d, Active: %d, CH: %d \n", i, PccwdAccessories[i][A_S], PccwdAccessories[i][A_D_HT], PccwdAccessories[i][A_D_A], PccwdAccessories[i][A_D_CH]);
@@ -152,7 +148,7 @@ void handleAccessories() {
 void StoreConfiguration() {
   File configFile = SPIFFS.open(CONFIG_FILE, "w");
   if (configFile) {
-    size_t bytes = configFile.write((unsigned char*)PccwdAccessories, 16 ); // C++ way
+    size_t bytes = configFile.write((unsigned char*)PccwdAccessories, 16);  // C++ way
     configFile.close();
   }
 }
@@ -171,7 +167,6 @@ void LoadConfiguration() {
     }
     configFile.close();
   }
-
 }
 
 void handleAddAccessory() {
@@ -222,7 +217,7 @@ void handleTurnOn() {
 
   if (address >= 0 && address < 4 && PccwdAccessories[address][A_S] > 0) {
     PccwdAccessories[address][A_S] = A_S_MANUAL;
-    PccwdAccessories[address][A_D_A] = 1;    
+    PccwdAccessories[address][A_D_A] = 1;
     digitalWrite(Pump_Pin[address], 1);
     getAccessory(accessoryId.c_str(), serviceName.c_str(), "ProgramMode");
     getAccessory(accessoryId.c_str(), serviceName.c_str(), "InUse");
@@ -241,7 +236,7 @@ void handleAuto() {
 
   if (address >= 0 && address < 4 && PccwdAccessories[address][A_S] > 0) {
     PccwdAccessories[address][A_S] = A_S_AUTO;
-    PccwdAccessories[address][A_D_A] = 0;    
+    PccwdAccessories[address][A_D_A] = 0;
     digitalWrite(Pump_Pin[address], 0);
     getAccessory(accessoryId.c_str(), serviceName.c_str(), "ProgramMode");
     getAccessory(accessoryId.c_str(), serviceName.c_str(), "InUse");
@@ -260,7 +255,7 @@ void handleschedule() {
 
   if (address >= 0 && address < 4 && PccwdAccessories[address][A_S] > 0) {
     PccwdAccessories[address][A_S] = A_S_SCH;
-    PccwdAccessories[address][A_D_A] = 0;    
+    PccwdAccessories[address][A_D_A] = 0;
     digitalWrite(Pump_Pin[address], 0);
     getAccessory(accessoryId.c_str(), serviceName.c_str(), "ProgramMode");
     getAccessory(accessoryId.c_str(), serviceName.c_str(), "InUse");
@@ -276,7 +271,7 @@ void handleTurnOff() {
   byte address = (byte)webSrv.arg("address").toInt();
   String accessoryId = chipId + "_" + address;
   String serviceName = String("IrrigationSystem ") + address;
-  
+
   if (address >= 0 && address < 4 && PccwdAccessories[address][A_S] > 0) {
     PccwdAccessories[address][A_S] = A_S_MANUAL;
     PccwdAccessories[address][A_D_A] = 0;
@@ -289,7 +284,7 @@ void handleTurnOff() {
   webSrv.send(200, "text/plain", "");
 }
 
-String getContentType(String filename) { // convert the file extension to the MIME type
+String getContentType(String filename) {  // convert the file extension to the MIME type
   if (filename.endsWith(".html")) return "text/html";
   else if (filename.endsWith(".css")) return "text/css";
   else if (filename.endsWith(".js")) return "application/javascript";
@@ -306,16 +301,35 @@ bool addAccessory(byte address) {
   String serviceName = String("IrrigationSystem ") + address;
   addAccessoryJson["service_name"] = serviceName;
   addAccessoryJson["service"] = "IrrigationSystem";
+  addAccessoryJson["ProgramMode"] = 0;
+  addAccessoryJson["Active"] = 0;
+  addAccessoryJson["InUse"] = 0;
   String addAccessoryJsonString;
   serializeJson(addAccessoryJson, addAccessoryJsonString);
   Log((char*)addAccessoryJsonString.c_str());
   client.publish(addtopic, addAccessoryJsonString.c_str());
   //{"name": "Master Sensor", "service_name": "humidity", "service": "HumiditySensor"}
   StaticJsonDocument<800> addServiceJson;
+  //Add auto Button
+  addServiceJson["name"] = accessoryId.c_str();
+  addServiceJson["service_name"] = "Auto Switch";
+  addServiceJson["service"] = "Switch";
+  String addServiceJsonString;
+  serializeJson(addServiceJson, addServiceJsonString);
+  client.publish(servicetopic, addServiceJsonString.c_str());
+  addServiceJson.clear();
+  //Add Active Button
+  addServiceJson["name"] = accessoryId.c_str();
+  addServiceJson["service_name"] = "Active Switch";
+  addServiceJson["service"] = "Switch";
+  serializeJson(addServiceJson, addServiceJsonString);
+  client.publish(servicetopic, addServiceJsonString.c_str());
+  addServiceJson.clear();
+
+  //add humidity service
   addServiceJson["name"] = accessoryId.c_str();
   addServiceJson["service_name"] = "Humidity Sensor";
   addServiceJson["service"] = "HumiditySensor";
-  String addServiceJsonString;
   serializeJson(addServiceJson, addServiceJsonString);
   return client.publish(servicetopic, addServiceJsonString.c_str());
 }
@@ -334,7 +348,7 @@ bool removeAccessory(byte address) {
 
 
 
-bool getAccessory(const char * accessoryName, const char * accessoryServiceName, const char * accessoryCharacteristic) {
+bool getAccessory(const char* accessoryName, const char* accessoryServiceName, const char* accessoryCharacteristic) {
   int idx = String(accessoryName).indexOf("_");
   String addressStr = String(accessoryName).substring(idx + 1);
   byte address = atoi(addressStr.c_str());
@@ -354,25 +368,29 @@ bool getAccessory(const char * accessoryName, const char * accessoryServiceName,
         Json["value"] = 1;
         break;
       case 3:
-        Json["value"] = 2 ;
+        Json["value"] = 2;
         break;
     }
-  }
-  else if (accessoryCharacteristic == std::string("CurrentRelativeHumidity")) {
+  } else if (accessoryCharacteristic == std::string("CurrentRelativeHumidity")) {
     Json["value"] = PccwdAccessories[address][A_D_CH];
-  }
-  else if (accessoryCharacteristic == std::string("Active")) {
+  } else if (accessoryCharacteristic == std::string("Active")) {
+    Json["value"] = PccwdAccessories[address][A_D_A];
+  } else if (accessoryCharacteristic == std::string("InUse")) {
     Json["value"] = PccwdAccessories[address][A_D_A];
   }
-  else if (accessoryCharacteristic == std::string("InUse")) {
+  if (accessoryCharacteristic == std::string("On") && accessoryServiceName == "Active Switch") {
     Json["value"] = PccwdAccessories[address][A_D_A];
   }
+  if (accessoryCharacteristic == std::string("On") && accessoryServiceName == "Auto Switch") {
+    Json["value"] = PccwdAccessories[address][0] == 1;
+  }
+
+
 
   String UpdateJsonString;
   serializeJson(Json, UpdateJsonString);
   Log((char*)UpdateJsonString.c_str());
   return client.publish(outtopic, UpdateJsonString.c_str());
-
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -384,7 +402,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   StaticJsonDocument<400> mqttAccessory;
 
-  DeserializationError error =  deserializeJson(mqttAccessory, message);
+  DeserializationError error = deserializeJson(mqttAccessory, message);
   if (error)
     return;
   const char* accessoryName = mqttAccessory["name"];
@@ -395,20 +413,25 @@ void callback(char* topic, byte* payload, unsigned int length) {
       const char* accessoryCharacteristic = mqttAccessory["characteristic"];
       int idx = String(accessoryName).indexOf("_");
       String addressStr = String(accessoryName).substring(idx + 1);
-      byte address = atoi(addressStr.c_str());  
+      byte address = atoi(addressStr.c_str());
+      byte accessoryValue = mqttAccessory["value"];
 
-      if (accessoryCharacteristic == std::string("Active")) {
-        byte accessoryValue = mqttAccessory["value"];
+      if ((accessoryCharacteristic == std::string("Active")) || (accessoryCharacteristic == std::string("On") && accessoryServiceName == "Active Switch") ) {
+       
         PccwdAccessories[address][A_D_A] = accessoryValue;
         PccwdAccessories[address][A_S] = A_S_MANUAL;
-         digitalWrite(Pump_Pin[address], accessoryValue);
+        digitalWrite(Pump_Pin[address], accessoryValue);
         //do something to device activate/deactivate pump
-        getAccessory(accessoryName, accessoryServiceName, "InUse");      
+        getAccessory(accessoryName, accessoryServiceName, "InUse");
         getAccessory(accessoryName, accessoryServiceName, "ProgramMode");
       }
+      
+      if (accessoryCharacteristic == std::string("On") && accessoryServiceName == "Auto Switch" ) {
+        PccwdAccessories[address][A_S] = accessoryValue? A_S_AUTO:A_S_MANUAL;
+        digitalWrite(Pump_Pin[address], 0);
+      }
     }
-  }
-  else if (gettopic == std::string(topic)) {
+  } else if (gettopic == std::string(topic)) {
     if (String(accessoryName).startsWith(chipId)) {
       const char* accessoryCharacteristic = mqttAccessory["characteristic"];
       getAccessory(accessoryName, accessoryServiceName, accessoryCharacteristic);
@@ -420,7 +443,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 void HadleIO() {
   for (int address = 0; address < 4; address++) {
-    if(PccwdAccessories[address][A_S]==A_S_NOTINUSE)
+    if (PccwdAccessories[address][A_S] == A_S_NOTINUSE)
       continue;
     String accessoryId = chipId + "_" + address;
     String serviceName = String("IrrigationSystem ") + address;
@@ -434,15 +457,17 @@ void HadleIO() {
     getAccessory(accessoryId.c_str(), "Humidity Sensor", "CurrentRelativeHumidity");
     if (PccwdAccessories[address][A_S] == A_S_AUTO) {
       //IF(crosses threshold) activate/deactivate pump
-      if ((CH - 5) > PccwdAccessories[address][A_D_HT]){
+      if ((CH - 5) > PccwdAccessories[address][A_D_HT]) {
         PccwdAccessories[address][A_D_A] = 0;
         digitalWrite(Pump_Pin[address], 0);
         getAccessory(accessoryId.c_str(), serviceName.c_str(), "InUse");
+        getAccessory(accessoryId.c_str(), "Active Switch", "On");
       }
-      if ((CH + 5) < PccwdAccessories[address][A_D_HT]){
+      if ((CH + 5) < PccwdAccessories[address][A_D_HT]) {
         PccwdAccessories[address][A_D_A] = 1;
         digitalWrite(Pump_Pin[address], 1);
         getAccessory(accessoryId.c_str(), serviceName.c_str(), "InUse");
+        getAccessory(accessoryId.c_str(), "Active Switch", "On");
       }
     }
   }
@@ -450,16 +475,16 @@ void HadleIO() {
 
 void setup() {
 
-Serial.begin(115200);
+  Serial.begin(115200);
 
   pinMode(M1_Pin, OUTPUT);
   pinMode(M2_Pin, OUTPUT);
   pinMode(M3_Pin, OUTPUT);
   pinMode(M4_Pin, OUTPUT);
 
-  Wire.begin( 5,4);
+  Wire.begin(5, 4);
   SPIFFS.begin();
-  ads.setGain(GAIN_ONE);  
+  ads.setGain(GAIN_ONE);
 
   chipId = String(serviceType) + String(ESP.getChipId());
 
@@ -516,9 +541,9 @@ Serial.begin(115200);
   webSrv.on("/turnoff", HTTP_GET, handleTurnOff);
   webSrv.on("/log", HTTP_GET, handleLog);
   webSrv.on("/clearlog", HTTP_GET, handleClearLog);
-  webSrv.on("/accessories", HTTP_GET, handleAccessories); 
-  webSrv.onNotFound([]() {                              // If the client requests any URI
-      webSrv.send(404, "text/plain", "404: Not Found"); // otherwise, respond with a 404 (Not Found) error
+  webSrv.on("/accessories", HTTP_GET, handleAccessories);
+  webSrv.onNotFound([]() {                             // If the client requests any URI
+    webSrv.send(404, "text/plain", "404: Not Found");  // otherwise, respond with a 404 (Not Found) error
   });
   //Http Server Start
   webSrv.begin();
@@ -533,7 +558,7 @@ void loop() {
       if (client.connect(chipId.c_str(), mqttuser, mqttpass, reachabilitytopic, 0, false, jsonReachabilityString.c_str())) {
         client.setCallback(callback);
         client.subscribe(intopic);
-        client.subscribe(gettopic);        
+        client.subscribe(gettopic);
         //setReachability()
         for (int i = 0; i < 4; i += 1) {
           if (PccwdAccessories[i][0] > 0) {

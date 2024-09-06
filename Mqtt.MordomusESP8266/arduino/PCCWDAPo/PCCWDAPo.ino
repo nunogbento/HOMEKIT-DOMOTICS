@@ -1,5 +1,6 @@
+
 #include <Wire.h>
-#include <Adafruit_MCP23017.h>
+#include <Adafruit_MCP23X17.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <RingBufCPP.h>
@@ -83,7 +84,7 @@ static unsigned long lastPingTime = 0 - pingInterval;
 static unsigned long lastIOTime = 0 - IOInterval;
 
 RingBufCPP<byte, 200> SerialBuf;
-Adafruit_MCP23017 mcp;
+Adafruit_MCP23X17 mcp;
 ESP8266WebServer webSrv(80);
 
 WiFiClient wclient;
@@ -102,7 +103,7 @@ SPIFFSLogger<AppTrace> logger("/apptrace", 1);
 byte SerialInput[10];
 int SerialInputIndex = 0;
 
-void Log(char* text) {
+void Log(const char* text) {
   struct AppTrace data ;
   strcpy(data.content, text);
   logger.write(data);
@@ -341,15 +342,15 @@ bool addAccessory(byte type, byte address) {
     String serviceName = String("Motion Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "MotionSensor";
-    mcp.pinMode(address - 1, INPUT);
-    mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall
+    mcp.pinMode(address - 1, INPUT_PULLUP);
+   
   }
   else if (type == LEAKSENSOR && address <= 16 && address > 0) {
     String serviceName = String("Leak Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "LeakSensor";
-    mcp.pinMode(address - 1, INPUT);
-    mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall
+    mcp.pinMode(address - 1, INPUT_PULLUP);
+   
   }
   else if (type == VALVE && address <= 16 && address > 0) {
     String serviceName = String("Valve ") + address;
@@ -362,15 +363,15 @@ bool addAccessory(byte type, byte address) {
     String serviceName = String("Smoke Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "SmokeSensor";
-    mcp.pinMode(address - 1, INPUT);
-    mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall
+    mcp.pinMode(address - 1, INPUT_PULLUP);
+   
 
   } else if (type == COSENSOR && address <= 16 && address > 0) {
     String serviceName = String("CarbonMonoxide Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "CarbonMonoxideSensor";
-    mcp.pinMode(address - 1, INPUT);
-    mcp.pullUp(address - 1, HIGH); // turn on a 100K pullup internall
+    mcp.pinMode(address - 1, INPUT_PULLUP);
+   
   }
 
   String addAccessoryJsonString;
@@ -563,7 +564,7 @@ void setup() {
   pinMode(PA_Interrupt_Pin, INPUT);
   pinMode(PB_Interrupt_Pin, INPUT);
 
-  mcp.begin();
+  mcp.begin_I2C();
 
   SPIFFS.begin();
 
@@ -580,6 +581,7 @@ void setup() {
   //reset saved settings
   //wifiManager.resetSettings();
    wifiManager.setConfigPortalTimeout(240); // auto close configportal after n seconds
+   WiFi.hostname(chipId.c_str());
   if (!wifiManager.autoConnect(chipId.c_str())) 
   {
     Serial.println(F("Failed to connect. Reset and try again..."));
