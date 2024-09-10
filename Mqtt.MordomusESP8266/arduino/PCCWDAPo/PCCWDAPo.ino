@@ -366,7 +366,15 @@ bool addAccessory(byte type, byte address) {
     String serviceName = String("Valve ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "Valve";
-    addAccessoryJson["ValveType"] = "default";
+    addAccessoryJson["ValveType"] = 0;
+  }
+  else if (type == IRRIGATIONVALVE ) {
+    String serviceName = String("Valve ") + address;
+    addAccessoryJson["service_name"] = serviceName;
+    addAccessoryJson["service"] = "Valve";
+    addAccessoryJson["ValveType"] = 1;
+    addAccessoryJson["RemainingDuration"] = 0;
+    //addAccessoryJson["SetDuration"] = 0;
   }
   else if (type == SMOKESENSOR) {
     String serviceName = String("Smoke Sensor ") + address;
@@ -388,7 +396,7 @@ void setupIO(byte type, byte address) {
   if (address > 16 || address < 1) return;
   else if (type == IRSENSOR || type == LEAKSENSOR || type == SMOKESENSOR || type == COSENSOR || type == NOMOTIONSENSOR) {
     mcp.pinMode(address - 1, INPUT_PULLUP);
-  } else if (type == VALVE) {
+  } else if (type == VALVE || type == IRRIGATIONVALVE) {
     mcp.pinMode(address - 1, OUTPUT);
   }
 }
@@ -460,12 +468,13 @@ bool getAccessory(const char * accessoryName, const char * accessoryServiceName,
     Json["value"] = "0.6.2";
   } 
   else if (accessoryCharacteristic == std::string("ValveType")) {
-    Json["value"] = 0;
+    Json["value"] = (PccwdAccessories[address][0]== IRRIGATIONVALVE)?1:0;
   }
+  else return false;
+
 
   String UpdateJsonString;
   serializeJson(Json, UpdateJsonString);
-  //Log((char*)UpdateJsonString.c_str());
   return client.publish(outtopic, UpdateJsonString.c_str());
 
 }
@@ -508,10 +517,11 @@ void callback(char* topic, byte* payload, unsigned int length) {
         PccwdAccessories[address][1] = accessoryValue;
         PinChangedAnalog = true;
 
-      } else if (accessoryCharacteristic == std::string("Active")) {
+      } else if (accessoryCharacteristic == std::string("Active") ) {
         byte accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
-        mcp.digitalWrite(address - 1, accessoryValue);
+        if( address>1 && address<16)
+          mcp.digitalWrite(address - 1, accessoryValue);
         getAccessory(accessoryName, accessoryServiceName, "InUse");
       }
     }
@@ -585,10 +595,10 @@ void setup() {
 
   chipId = String(serviceType) + String(ESP.getChipId());
 
-  StaticJsonDocument<200> jsonReachability;
-  jsonReachability["name"] = chipId.c_str();
-  jsonReachability["reachable"] = false;
-  serializeJson(jsonReachability, jsonReachabilityString);
+  // StaticJsonDocument<200> jsonReachability;
+  // jsonReachability["name"] = chipId.c_str();
+  // jsonReachability["reachable"] = false;
+  // serializeJson(jsonReachability, jsonReachabilityString);
 
   //WiFiManager
   //Local intialization. Once its business is done, there is no need to keep it around
@@ -682,7 +692,7 @@ void loop() {
   ArduinoOTA.handle();
   if (WiFi.status() == WL_CONNECTED) {
     if (!client.connected()) {
-      if (client.connect(chipId.c_str(), mqttuser, mqttpass, reachabilitytopic, 0, false, jsonReachabilityString.c_str())) {
+      if (client.connect(chipId.c_str(), mqttuser, mqttpass)){//, reachabilitytopic, 0, false, jsonReachabilityString.c_str())) {
         client.setCallback(callback);
         client.subscribe(intopic);
         client.subscribe(gettopic);
