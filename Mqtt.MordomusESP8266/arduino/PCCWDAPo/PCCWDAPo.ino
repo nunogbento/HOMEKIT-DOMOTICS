@@ -1,4 +1,3 @@
-
 #include <Wire.h>
 #include <Adafruit_MCP23X17.h>
 #include <ArduinoJson.h>
@@ -21,7 +20,7 @@
 #define PA_Interrupt_Pin 12
 #define PB_Interrupt_Pin 13
 
-#define CONFIG_FILE       "/accessories.conf"
+#define CONFIG_FILE "/accessories.conf"
 #define LIGHT 1
 #define PUSHBTN 2
 #define IRSENSOR 3
@@ -39,7 +38,7 @@ volatile boolean awakenByInterrupt = false;
 volatile boolean PinChangedAnalog = false;
 bool isPCCWDConnected = false;
 
-byte pingPccwdBytes[] = {0x57, 0x01, 0x64};
+byte pingPccwdBytes[] = { 0x57, 0x01, 0x64 };
 
 byte initPccwdbytes[] = {
   0xaa, 0x02, 0x8a, 0xaa, 0x02, 0x8b,
@@ -79,8 +78,8 @@ const char* maintmessage = "";
 String chipId;
 String jsonReachabilityString;
 
-const unsigned long pingInterval =  3000UL;
-const unsigned long IOInterval =  500UL;
+const unsigned long pingInterval = 3000UL;
+const unsigned long IOInterval = 500UL;
 
 static unsigned long lastPingTime = 0 - pingInterval;
 static unsigned long lastIOTime = 0 - IOInterval;
@@ -94,8 +93,7 @@ PubSubClient client(wclient);
 
 File fsUploadFile;
 
-struct AppTrace
-{
+struct AppTrace {
   char content[256];
 };
 // create a new logger which will store records in files with names like
@@ -106,19 +104,18 @@ byte SerialInput[10];
 int SerialInputIndex = 0;
 
 void Log(const char* text) {
-  struct AppTrace data ;
+  struct AppTrace data;
   strcpy(data.content, text);
   logger.write(data);
-
 }
 
 SPIFFSLogData<AppTrace> traceData[25];
 char chunk[300];
 
 void handleClearLog() {
-  char  filename[40];
-  time_t today = time(nullptr) / 86400 * 86400; // remove the time part
-  struct tm *tinfo = gmtime(&today);
+  char filename[40];
+  time_t today = time(nullptr) / 86400 * 86400;  // remove the time part
+  struct tm* tinfo = gmtime(&today);
   sprintf_P(filename,
             "%s/%d%02d%02d",
             "/apptrace",
@@ -128,10 +125,10 @@ void handleClearLog() {
 
   if (SPIFFS.remove(filename)) {
     sprintf(chunk, "Removed Log File at: %s", filename);
-    webSrv.send( 200, "text/html", chunk);
+    webSrv.send(200, "text/html", chunk);
   } else {
     sprintf(chunk, "Failed to Remove Log File at: %s", filename);
-    webSrv.send( 400, "text/html", chunk);
+    webSrv.send(400, "text/html", chunk);
   }
 }
 
@@ -141,7 +138,7 @@ void handleLog() {
   size_t total = rowCount > 25 ? 25 : rowCount;
   webSrv.setContentLength(CONTENT_LENGTH_UNKNOWN);
   sprintf(chunk, "Log aT %d: Rows: %d\r\n", ctime(&now), rowCount);
-  webSrv.send( 200, "text/html", chunk);
+  webSrv.send(200, "text/html", chunk);
   size_t count = logger.readRows(traceData, now, rowCount - 1 - total, total);
   for (int i = count - 1; i >= 0; i--) {
     sprintf(chunk, "%s - %s \r\n",
@@ -153,7 +150,7 @@ void handleLog() {
 
 void handleAccessories() {
   webSrv.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  webSrv.send( 200, "text/html", "Accessories: \n");
+  webSrv.send(200, "text/html", "Accessories: \n");
   for (int i = 0; i < 200; i += 1) {
     if (PccwdAccessories[i][0] > 0) {
       sprintf(chunk, "Address: %d --> Type: %d, data: %d \n", i, PccwdAccessories[i][0], PccwdAccessories[i][1]);
@@ -168,7 +165,7 @@ void handleResetAccessories() {
     PccwdAccessories[i][0] = 0;
     PccwdAccessories[i][1] = 0;
   }
-  webSrv.send( 200, "text/html", "Accessories Reset");
+  webSrv.send(200, "text/html", "Accessories Reset");
 }
 
 
@@ -178,13 +175,13 @@ void handleSyncAccessories() {
       addAccessory(PccwdAccessories[i][0], i);
     }
   };
-  webSrv.send( 200, "text/html", "Accessories Sync with Hombridge completed");
+  webSrv.send(200, "text/html", "Accessories Sync with Hombridge completed");
 }
 
 void StoreConfiguration() {
   File configFile = SPIFFS.open(CONFIG_FILE, "w");
   if (configFile) {
-    size_t bytes = configFile.write((unsigned char*)PccwdAccessories, 400 ); // C++ way
+    size_t bytes = configFile.write((unsigned char*)PccwdAccessories, 400);  // C++ way
     configFile.close();
   }
 }
@@ -206,14 +203,14 @@ void LoadConfiguration() {
 void handleAddAccessory() {
   if (webSrv.args() < 2) return webSrv.send(500, "text/plain", "BAD ARGS");
   byte address = (byte)webSrv.arg("address").toInt();
-  byte type =  (address == 0) ? 1 : (byte)webSrv.arg("type").toInt();
+  byte type = (address == 0) ? 1 : (byte)webSrv.arg("type").toInt();
 
   byte data = 0;
   if (webSrv.args() == 3)
     data = (byte)webSrv.arg("data").toInt();
 
   if (addAccessory(type, address)) {
-    setupIO(type,address);
+    setupIO(type, address);
     PccwdAccessories[address][0] = type;
     PccwdAccessories[address][1] = data;
     StoreConfiguration();
@@ -248,10 +245,10 @@ void handleRemoveAccessory() {
 void handleTurnOn() {
   if (webSrv.args() != 1) return webSrv.send(400, "text/plain", "BAD ARGS");
   byte address = (byte)webSrv.arg("address").toInt();
-  if (PccwdAccessories[address][0] != 1)webSrv.send(400, "text/plain", "wrong Accessory Type");
+  if (PccwdAccessories[address][0] != 1) webSrv.send(400, "text/plain", "wrong Accessory Type");
   if (address == 0) {
     PccwdAccessories[address][1] = 100;
-    analogWrite(WHITE_LedPin , map(PccwdAccessories[address][1], 0, 100, 0, 255) );
+    analogWrite(WHITE_LedPin, map(PccwdAccessories[address][1], 0, 100, 0, 255));
   } else {
     PccwdAccessories[address][1] = 1;
     SerialBuf.add(preamble);
@@ -266,10 +263,10 @@ void handleTurnOn() {
 void handleTurnOff() {
   if (webSrv.args() != 1) return webSrv.send(500, "text/plain", "BAD ARGS");
   byte address = (byte)webSrv.arg("address").toInt();
-  if (PccwdAccessories[address][0] != 1)webSrv.send(400, "text/plain", "wrong Accessory Type");
+  if (PccwdAccessories[address][0] != 1) webSrv.send(400, "text/plain", "wrong Accessory Type");
   PccwdAccessories[address][1] = 0;
   if (address == 0) {
-    analogWrite(WHITE_LedPin , map(PccwdAccessories[address][1], 0, 100, 0, 255) );
+    analogWrite(WHITE_LedPin, map(PccwdAccessories[address][1], 0, 100, 0, 255));
   } else {
     SerialBuf.add(preamble);
     SerialBuf.add(address);
@@ -280,7 +277,7 @@ void handleTurnOff() {
   webSrv.send(200, "text/plain", "");
 }
 
-String getContentType(String filename) { // convert the file extension to the MIME type
+String getContentType(String filename) {  // convert the file extension to the MIME type
   if (filename.endsWith(".html")) return "text/html";
   else if (filename.endsWith(".css")) return "text/css";
   else if (filename.endsWith(".js")) return "application/javascript";
@@ -289,16 +286,16 @@ String getContentType(String filename) { // convert the file extension to the MI
   return "text/plain";
 }
 
-bool handleFileRead(String path) { // send the right file to the client (if it exists)
+bool handleFileRead(String path) {  // send the right file to the client (if it exists)
   sprintf(chunk, "handleFileRead:  %s", path.c_str());
   Log(chunk);
-  if (path.endsWith("/")) path += "index.html";          // If a folder is requested, send the index file
-  String contentType = getContentType(path);             // Get the MIME type
+  if (path.endsWith("/")) path += "index.html";  // If a folder is requested, send the index file
+  String contentType = getContentType(path);     // Get the MIME type
 
-  if (SPIFFS.exists(path)) { // If the file exists, either as a compressed archive, or normal                                      // Use the compressed verion
-    File file = SPIFFS.open(path, "r");                    // Open the file
-    size_t sent = webSrv.streamFile(file, contentType);    // Send it to the client
-    file.close();                                         // Close the file again
+  if (SPIFFS.exists(path)) {                             // If the file exists, either as a compressed archive, or normal                                      // Use the compressed verion
+    File file = SPIFFS.open(path, "r");                  // Open the file
+    size_t sent = webSrv.streamFile(file, contentType);  // Send it to the client
+    file.close();                                        // Close the file again
 
     return true;
   }
@@ -308,7 +305,7 @@ bool handleFileRead(String path) { // send the right file to the client (if it e
   return false;
 }
 
-void handleFileUpload() { // upload a new file to the SPIFFS
+void handleFileUpload() {  // upload a new file to the SPIFFS
   HTTPUpload& upload = webSrv.upload();
   String filename = upload.filename;
   if (upload.status == UPLOAD_FILE_START) {
@@ -316,17 +313,17 @@ void handleFileUpload() { // upload a new file to the SPIFFS
     if (!filename.startsWith("/")) filename = "/" + filename;
 
 
-    fsUploadFile = SPIFFS.open(filename, "w");            // Open the file for writing in SPIFFS (create if it doesn't exist)
+    fsUploadFile = SPIFFS.open(filename, "w");  // Open the file for writing in SPIFFS (create if it doesn't exist)
     filename = String();
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (fsUploadFile)
-      fsUploadFile.write(upload.buf, upload.currentSize); // Write the received bytes to the file
+      fsUploadFile.write(upload.buf, upload.currentSize);  // Write the received bytes to the file
   } else if (upload.status == UPLOAD_FILE_END) {
-    if (fsUploadFile) {                                   // If the file was successfully created
-      fsUploadFile.close();                              // Close the file again
+    if (fsUploadFile) {      // If the file was successfully created
+      fsUploadFile.close();  // Close the file again
       sprintf(chunk, "handleFileUpload Name: %s  size:%d", upload.filename.c_str(), upload.totalSize);
       Log(chunk);
-      webSrv.sendHeader("Location", "/success.html");     // Redirect the client to the success page
+      webSrv.sendHeader("Location", "/success.html");  // Redirect the client to the success page
       webSrv.send(303);
     } else {
       webSrv.send(500, "text/plain", "500: couldn't create file");
@@ -335,8 +332,8 @@ void handleFileUpload() { // upload a new file to the SPIFFS
 }
 //{"name"="PCCWDAPI11027766_8","service_name"="Valve 8","service"="Valve","ValveType","default"}
 bool addAccessory(byte type, byte address) {
-  if(address<0)return false;
-  if(type>2 && address >16) return false;
+  if (address < 0) return false;
+  if (type > 2 && address > 16) return false;
   StaticJsonDocument<800> addAccessoryJson;
   String accessoryId = chipId + "_" + address;
   addAccessoryJson["name"] = accessoryId.c_str();
@@ -346,41 +343,35 @@ bool addAccessory(byte type, byte address) {
     addAccessoryJson["service"] = "Lightbulb";
     if (address == 0)
       addAccessoryJson["Brightness"] = "default";
-  }
-  else if (type == PUSHBTN) {
+  } else if (type == PUSHBTN) {
     String serviceName = String("Switch ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "StatelessProgrammableSwitch";
-  }
-  else if (type == IRSENSOR || type == NOMOTIONSENSOR) {
+  } else if (type == IRSENSOR || type == NOMOTIONSENSOR) {
     String serviceName = String("Motion Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "MotionSensor";
-  }
-  else if (type == LEAKSENSOR ) {
+  } else if (type == LEAKSENSOR) {
     String serviceName = String("Leak Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
-    addAccessoryJson["service"] = "LeakSensor"; 
-  }
-  else if (type == VALVE ) {
+    addAccessoryJson["service"] = "LeakSensor";
+  } else if (type == VALVE) {
     String serviceName = String("Valve ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "Valve";
     addAccessoryJson["ValveType"] = 0;
-  }
-  else if (type == IRRIGATIONVALVE ) {
+  } else if (type == IRRIGATIONVALVE) {
     String serviceName = String("Valve ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "Valve";
     addAccessoryJson["ValveType"] = 1;
     addAccessoryJson["RemainingDuration"] = 0;
     //addAccessoryJson["SetDuration"] = 0;
-  }
-  else if (type == SMOKESENSOR) {
+  } else if (type == SMOKESENSOR) {
     String serviceName = String("Smoke Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "SmokeSensor";
-  } else if (type == COSENSOR ) {
+  } else if (type == COSENSOR) {
     String serviceName = String("CarbonMonoxide Sensor ") + address;
     addAccessoryJson["service_name"] = serviceName;
     addAccessoryJson["service"] = "CarbonMonoxideSensor";
@@ -412,7 +403,7 @@ bool removeAccessory(byte address) {
   return client.publish(removetopic, removeAccessoryJsonString.c_str());
 }
 
-bool ProgrammableSwitchEvent(const char * accessoryName, int presses) {
+bool ProgrammableSwitchEvent(const char* accessoryName, int presses) {
   int idx = String(accessoryName).indexOf("_");
   String addressStr = String(accessoryName).substring(idx + 1);
 
@@ -426,11 +417,10 @@ bool ProgrammableSwitchEvent(const char * accessoryName, int presses) {
   serializeJson(Json, UpdateJsonString);
   //Log((char*)UpdateJsonString.c_str());
   return client.publish(outtopic, UpdateJsonString.c_str());
-
 }
 
 
-bool getAccessory(const char * accessoryName, const char * accessoryServiceName, const char * accessoryCharacteristic) {
+bool getAccessory(const char* accessoryName, const char* accessoryServiceName, const char* accessoryCharacteristic) {
   int idx = String(accessoryName).indexOf("_");
   String addressStr = String(accessoryName).substring(idx + 1);
   byte address = atoi(addressStr.c_str());
@@ -442,41 +432,30 @@ bool getAccessory(const char * accessoryName, const char * accessoryServiceName,
 
   if (accessoryCharacteristic == std::string("On")) {
     Json["value"] = (PccwdAccessories[address][1] > 0);
-  }
-  else if (accessoryCharacteristic == std::string("Brightness")) {
+  } else if (accessoryCharacteristic == std::string("Brightness")) {
     Json["value"] = PccwdAccessories[address][1];
-  }
-  else if (accessoryCharacteristic == std::string("MotionDetected")) {
+  } else if (accessoryCharacteristic == std::string("MotionDetected")) {
     Json["value"] = (PccwdAccessories[address][1] == 1);
-  }
-  else if (accessoryCharacteristic == std::string("LeakDetected")) {
+  } else if (accessoryCharacteristic == std::string("LeakDetected")) {
     Json["value"] = (PccwdAccessories[address][1] == 1) ? 0 : 1;
-  }
-  else if (accessoryCharacteristic == std::string("Active")) {
+  } else if (accessoryCharacteristic == std::string("Active")) {
     Json["value"] = PccwdAccessories[address][1];
-  }
-  else if (accessoryCharacteristic == std::string("InUse")) {
+  } else if (accessoryCharacteristic == std::string("InUse")) {
     Json["value"] = PccwdAccessories[address][1];
-  }
-  else if (accessoryCharacteristic == std::string("SmokeDetected")) {
+  } else if (accessoryCharacteristic == std::string("SmokeDetected")) {
     Json["value"] = (PccwdAccessories[address][1] == 1) ? 0 : 1;
-  }
-  else if (accessoryCharacteristic == std::string("CarbonMonoxideDetected")) {
+  } else if (accessoryCharacteristic == std::string("CarbonMonoxideDetected")) {
     Json["value"] = (PccwdAccessories[address][1] == 1) ? 0 : 1;
-  }
-  else if (accessoryCharacteristic == std::string("FirmwareRevision")) {
+  } else if (accessoryCharacteristic == std::string("FirmwareRevision")) {
     Json["value"] = "0.6.2";
-  } 
-  else if (accessoryCharacteristic == std::string("ValveType")) {
-    Json["value"] = (PccwdAccessories[address][0]== IRRIGATIONVALVE)?1:0;
-  }
-  else return false;
+  } else if (accessoryCharacteristic == std::string("ValveType")) {
+    Json["value"] = (PccwdAccessories[address][0] == IRRIGATIONVALVE) ? 1 : 0;
+  } else return false;
 
 
   String UpdateJsonString;
   serializeJson(Json, UpdateJsonString);
   return client.publish(outtopic, UpdateJsonString.c_str());
-
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -488,7 +467,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   StaticJsonDocument<400> mqttAccessory;
 
-  DeserializationError error =  deserializeJson(mqttAccessory, message);
+  DeserializationError error = deserializeJson(mqttAccessory, message);
   if (error)
     return;
   const char* accessoryName = mqttAccessory["name"];
@@ -504,7 +483,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
       if (accessoryCharacteristic == std::string("On")) {
         bool accessoryValue = mqttAccessory["value"];
         if (address != 0) {
-          PccwdAccessories[address][1] = (accessoryValue) ? 1 : 0 ;
+          PccwdAccessories[address][1] = (accessoryValue) ? 1 : 0;
           SerialBuf.add(preamble);
           SerialBuf.add(address);
           SerialBuf.add((accessoryValue) ? oncmd : offcmd);
@@ -517,16 +496,15 @@ void callback(char* topic, byte* payload, unsigned int length) {
         PccwdAccessories[address][1] = accessoryValue;
         PinChangedAnalog = true;
 
-      } else if (accessoryCharacteristic == std::string("Active") ) {
+      } else if (accessoryCharacteristic == std::string("Active")) {
         byte accessoryValue = mqttAccessory["value"];
         PccwdAccessories[address][1] = accessoryValue;
-        if( address>1 && address<16)
+        if (address > 1 && address < 16)
           mcp.digitalWrite(address - 1, accessoryValue);
         getAccessory(accessoryName, accessoryServiceName, "InUse");
       }
     }
-  }
-  else if (gettopic == std::string(topic)) {
+  } else if (gettopic == std::string(topic)) {
     if (String(accessoryName).startsWith(chipId)) {
       const char* accessoryCharacteristic = mqttAccessory["characteristic"];
       getAccessory(accessoryName, accessoryServiceName, accessoryCharacteristic);
@@ -544,37 +522,34 @@ void HadleIO() {
 
     if (PccwdAccessories[i][0] == LIGHT && i == 0 && PinChangedAnalog) {
       PinChangedAnalog = false;
-      analogWrite(WHITE_LedPin , map( PccwdAccessories[i][1], 0, 100, 0, 255) );
+      analogWrite(WHITE_LedPin, map(PccwdAccessories[i][1], 0, 100, 0, 255));
     }
 
     uint8_t IOPinValue = mcp.digitalRead(i);
 
     if (PccwdAccessories[address][0] == IRSENSOR || PccwdAccessories[address][0] == NOMOTIONSENSOR) {
       serviceName = String("Motion Sensor ") + address;
-      uint8_t _motionDetected = (PccwdAccessories[address][0] == IRSENSOR) ? IOPinValue : (IOPinValue == 0) ? 1: 0;
-      if (_motionDetected != PccwdAccessories[address][1])
-        {
-          PccwdAccessories[address][1] = _motionDetected;
-          getAccessory(accessoryId.c_str(), serviceName.c_str(), "MotionDetected");
-        }
-    } else  if (PccwdAccessories[address][0] == SMOKESENSOR) {
+      uint8_t _motionDetected = (PccwdAccessories[address][0] == IRSENSOR) ? IOPinValue : (IOPinValue == 0) ? 1
+                                                                                                            : 0;
+      if (_motionDetected != PccwdAccessories[address][1]) {
+        PccwdAccessories[address][1] = _motionDetected;
+        getAccessory(accessoryId.c_str(), serviceName.c_str(), "MotionDetected");
+      }
+    } else if (PccwdAccessories[address][0] == SMOKESENSOR) {
       serviceName = String("Smoke Sensor ") + address;
-      if (IOPinValue != PccwdAccessories[address][1])
-      {
+      if (IOPinValue != PccwdAccessories[address][1]) {
         PccwdAccessories[address][1] = IOPinValue;
         getAccessory(accessoryId.c_str(), serviceName.c_str(), "SmokeDetected");
       }
-    } else  if (PccwdAccessories[address][0] == COSENSOR) {
+    } else if (PccwdAccessories[address][0] == COSENSOR) {
       serviceName = String("CarbonMonoxide Sensor ") + address;
-      if (IOPinValue != PccwdAccessories[address][1])
-      {
+      if (IOPinValue != PccwdAccessories[address][1]) {
         PccwdAccessories[address][1] = IOPinValue;
         getAccessory(accessoryId.c_str(), serviceName.c_str(), "CarbonMonoxideDetected");
       }
     } else if (PccwdAccessories[address][0] == LEAKSENSOR) {
       serviceName = String("Leak Sensor ") + address;
-      if (IOPinValue != PccwdAccessories[address][1])
-      {
+      if (IOPinValue != PccwdAccessories[address][1]) {
         PccwdAccessories[address][1] = IOPinValue;
         getAccessory(accessoryId.c_str(), serviceName.c_str(), "LeakDetected");
       }
@@ -605,10 +580,9 @@ void setup() {
   WiFiManager wifiManager;
   //reset saved settings
   //wifiManager.resetSettings();
-   wifiManager.setConfigPortalTimeout(240); // auto close configportal after n seconds
-   WiFi.hostname(chipId.c_str());
-  if (!wifiManager.autoConnect(chipId.c_str())) 
-  {
+  wifiManager.setConfigPortalTimeout(240);  // auto close configportal after n seconds
+  WiFi.hostname(chipId.c_str());
+  if (!wifiManager.autoConnect(chipId.c_str())) {
     Serial.println(F("Failed to connect. Reset and try again..."));
     delay(3000);
     //reset and try again
@@ -632,7 +606,7 @@ void setup() {
     //    Log(chunk);
   });
   ArduinoOTA.onError([](ota_error_t error) {
-   // Serial.printf("Error[%u]: ", error);
+    // Serial.printf("Error[%u]: ", error);
     if (error == OTA_AUTH_ERROR) Log("Auth Failed");
     else if (error == OTA_BEGIN_ERROR) Log("Begin Failed");
     else if (error == OTA_CONNECT_ERROR) Log("Connect Failed");
@@ -657,33 +631,31 @@ void setup() {
   webSrv.on("/add", HTTP_GET, handleAddAccessory);
   webSrv.on("/remove", HTTP_GET, handleRemoveAccessory);
   webSrv.on("/reset", HTTP_GET, handleResetAccessories);
-  webSrv.on("/Sync", HTTP_GET, handleSyncAccessories); //recreates all accessories in homebridge as configured
+  webSrv.on("/Sync", HTTP_GET, handleSyncAccessories);  //recreates all accessories in homebridge as configured
   webSrv.on("/turnon", HTTP_GET, handleTurnOn);
   webSrv.on("/turnoff", HTTP_GET, handleTurnOff);
   webSrv.on("/log", HTTP_GET, handleLog);
   webSrv.on("/clearlog", HTTP_GET, handleClearLog);
   webSrv.on("/accessories", HTTP_GET, handleAccessories);
 
-  webSrv.on("/upload", HTTP_GET, []() {                 // if the client requests the upload page
-    if (!handleFileRead("/upload.html"))                // send it if it exists
-      webSrv.send(404, "text/plain", "404: Not Found"); // otherwise, respond with a 404 (Not Found) error
+  webSrv.on("/upload", HTTP_GET, []() {                  // if the client requests the upload page
+    if (!handleFileRead("/upload.html"))                 // send it if it exists
+      webSrv.send(404, "text/plain", "404: Not Found");  // otherwise, respond with a 404 (Not Found) error
   });
 
-  webSrv.on("/upload", HTTP_POST,                       // if the client posts to the upload page
-  []() {
-    webSrv.send(200);
-  },                          // Send status 200 (OK) to tell the client we are ready to receive
-  handleFileUpload                                    // Receive and save the file
-           );
-  webSrv.onNotFound([]() {                              // If the client requests any URI
-    if (!handleFileRead(webSrv.uri()))                  // send it if it exists
-      webSrv.send(404, "text/plain", "404: Not Found"); // otherwise, respond with a 404 (Not Found) error
+  webSrv.on(
+    "/upload", HTTP_POST,  // if the client posts to the upload page
+    []() {
+      webSrv.send(200);
+    },                // Send status 200 (OK) to tell the client we are ready to receive
+    handleFileUpload  // Receive and save the file
+  );
+  webSrv.onNotFound([]() {                               // If the client requests any URI
+    if (!handleFileRead(webSrv.uri()))                   // send it if it exists
+      webSrv.send(404, "text/plain", "404: Not Found");  // otherwise, respond with a 404 (Not Found) error
   });
   //Http Server Start
   webSrv.begin();
-
-
-
 }
 
 
@@ -692,7 +664,7 @@ void loop() {
   ArduinoOTA.handle();
   if (WiFi.status() == WL_CONNECTED) {
     if (!client.connected()) {
-      if (client.connect(chipId.c_str(), mqttuser, mqttpass)){//, reachabilitytopic, 0, false, jsonReachabilityString.c_str())) {
+      if (client.connect(chipId.c_str(), mqttuser, mqttpass)) {  //, reachabilitytopic, 0, false, jsonReachabilityString.c_str())) {
         client.setCallback(callback);
         client.subscribe(intopic);
         client.subscribe(gettopic);
@@ -754,11 +726,10 @@ void loop() {
           if (bulbAddress > 0 && presses == 0) {
             String bulbId = chipId + "_" + bulbAddress;
             String ServiceName = String("Lightbulb ") + bulbAddress;
-            PccwdAccessories[bulbAddress] [1] = (PccwdAccessories[bulbAddress][1] == 0) ? 1 : 0;
+            PccwdAccessories[bulbAddress][1] = (PccwdAccessories[bulbAddress][1] == 0) ? 1 : 0;
             getAccessory(bulbId.c_str(), ServiceName.c_str(), "On");
           }
           ProgrammableSwitchEvent(accessoryId.c_str(), presses);
-
         }
       }
     }
@@ -770,5 +741,4 @@ void loop() {
     logger.process();
   }
   webSrv.handleClient();
-
 }

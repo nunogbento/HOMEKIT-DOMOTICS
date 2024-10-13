@@ -6,7 +6,6 @@ void my_accessory_identify(homekit_value_t _value) {
   printf("accessory identify\n");
 }
 
-
 homekit_characteristic_t cha_name_s = HOMEKIT_CHARACTERISTIC_(NAME, "WaterHeaterS");
 homekit_characteristic_t cha_name_e = HOMEKIT_CHARACTERISTIC_(NAME, "WaterHeaterE");
 
