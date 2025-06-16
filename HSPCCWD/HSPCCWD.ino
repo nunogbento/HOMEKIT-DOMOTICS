@@ -9,15 +9,15 @@
 
 IN10wDStatelessProgrammableSwitch* switches[10];
 
-PCCWDController pccwdController(Serial2);
+PCCWDController pccwdController(Serial1);
 
 void setup() {
 
   Serial.begin(115200);
-  Serial2.begin(14400);
+  Serial1.begin(14400);
 
 
-  homeSpan.setStatusPin(2);
+  homeSpan.setStatusPin(8);
   homeSpan.setControlPin(0);
   homeSpan.setApSSID("PCCWDSETUP");
   homeSpan.setApPassword("");
