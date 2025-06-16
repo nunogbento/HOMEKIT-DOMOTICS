@@ -100,7 +100,9 @@ void loop() {
 
 // access your HomeKit characteristics defined in my_accessory.c
 
+
 extern "C" homekit_server_config_t accessory_config;
+
 extern "C" homekit_characteristic_t cha_active_1;
 extern "C" homekit_characteristic_t cha_active_2;
 extern "C" homekit_characteristic_t cha_active_3;
@@ -128,7 +130,10 @@ extern "C" homekit_characteristic_t cha_valve_r_d_4;
 
 static uint32_t next_heap_millis = 0;
 
+
+
 void my_homekit_setup() {
+  
   cha_active_1.setter = set_active_1;
   cha_active_2.setter = set_active_2;
   cha_active_3.setter = set_active_3;
@@ -139,85 +144,99 @@ void my_homekit_setup() {
   cha_valve_s_d_3.setter = set_d_3;
   cha_valve_s_d_4.setter = set_d_4;
 
-  arduino_homekit_setup(&accessory_config);
-
-
   VC1.setActiveChangeCallback([&](u_int8_t active) {
     cha_active_1.value.uint8_value = active;
     homekit_characteristic_notify(&cha_active_1, cha_active_1.value);
+    LOG_D("V1 active updated %u:",active);
   });
 
+  
   VC1.setInUseChangeCallback([&](u_int8_t inUse) {
     cha_in_use_1.value.uint8_value = inUse;
     homekit_characteristic_notify(&cha_in_use_1, cha_in_use_1.value);
+    LOG_D("V1 InUse updated: %u",inUse);
   });
 
-  VC1.setRemainingDurationChangeCallback([&](u_int16_t duration) {
-    cha_valve_r_d_1.value.uint16_value = duration;
+  VC1.setRemainingDurationChangeCallback([&](u_int32_t duration) {
+    cha_valve_r_d_1.value.uint32_value = duration;
     homekit_characteristic_notify(&cha_valve_r_d_1, cha_valve_r_d_1.value);
+    LOG_D("V1 Remaining updated %u",duration);
   });
 
 
   VC2.setActiveChangeCallback([&](u_int8_t active) {
     cha_active_2.value.uint8_value = active;
     homekit_characteristic_notify(&cha_active_2, cha_active_2.value);
+    LOG_D("V2 active updated %u:",active);
   });
 
   VC2.setInUseChangeCallback([&](u_int8_t inUse) {
     cha_in_use_2.value.uint8_value = inUse;
     homekit_characteristic_notify(&cha_in_use_2, cha_in_use_2.value);
+    LOG_D("V2 InUse updated %u:",inUse);
   });
 
-  VC2.setRemainingDurationChangeCallback([&](u_int16_t duration) {
-    cha_valve_r_d_2.value.uint16_value = duration;
+  VC2.setRemainingDurationChangeCallback([&](u_int32_t duration) {
+    cha_valve_r_d_2.value.uint32_value = duration;
     homekit_characteristic_notify(&cha_valve_r_d_2, cha_valve_r_d_2.value);
+    LOG_D("V2 Remaining updated %u",duration);
   });
 
 
   VC3.setActiveChangeCallback([&](u_int8_t active) {
     cha_active_3.value.uint8_value = active;
-    homekit_characteristic_notify(&cha_active_3, cha_active_3.value);
+    homekit_characteristic_notify(&cha_active_3, cha_active_3.value);    
+    LOG_D("V3 active updated %u:",active);
   });
 
   VC3.setInUseChangeCallback([&](u_int8_t inUse) {
     cha_in_use_3.value.uint8_value = inUse;
     homekit_characteristic_notify(&cha_in_use_3, cha_in_use_3.value);
+    LOG_D("V3 InUse updated %u:",inUse);
   });
 
-  VC3.setRemainingDurationChangeCallback([&](u_int16_t duration) {
-    cha_valve_r_d_3.value.uint16_value = duration;
+  VC3.setRemainingDurationChangeCallback([&](u_int32_t duration) {
+    cha_valve_r_d_3.value.uint32_value = duration;
     homekit_characteristic_notify(&cha_valve_r_d_3, cha_valve_r_d_3.value);
+    LOG_D("V3 Remaining updated %u",duration);
   });
 
 
   VC4.setActiveChangeCallback([&](u_int8_t active) {
     cha_active_4.value.uint8_value = active;
     homekit_characteristic_notify(&cha_active_4, cha_active_4.value);
+    LOG_D("V4 active updated %u:",active);
   });
 
   VC4.setInUseChangeCallback([&](u_int8_t inUse) {
     cha_in_use_4.value.uint8_value = inUse;
     homekit_characteristic_notify(&cha_in_use_4, cha_in_use_4.value);
+    LOG_D("V4 InUse updated %u:",inUse);
   });
 
-  VC4.setRemainingDurationChangeCallback([&](u_int16_t duration) {
-    cha_valve_r_d_4.value.uint16_value = duration;
+  VC4.setRemainingDurationChangeCallback([&](u_int32_t duration) {
+    cha_valve_r_d_4.value.uint32_value = duration;
     homekit_characteristic_notify(&cha_valve_r_d_4, cha_valve_r_d_4.value);
+    LOG_D("V4 Remaining updated %u",duration);
   });
+
+  arduino_homekit_setup(&accessory_config);
 }
 
 
 
 void my_homekit_loop() {
   arduino_homekit_loop();
-  const uint32_t t = millis();
-  if (t > next_heap_millis) {
-    // show heap info every 5 seconds
-    next_heap_millis = t + 5 * 1000;
-    LOG_D("Free heap: %d, HomeKit clients: %d",
-          ESP.getFreeHeap(), arduino_homekit_connected_clients_count());
-  }
+  // const uint32_t t = millis();
+  // if (t > next_heap_millis) {
+  //   // show heap info every 5 seconds
+  //   next_heap_millis = t + 5 * 1000;
+  //    LOG_D("Free heap: %d, HomeKit clients: %d",
+  //        ESP.getFreeHeap(), arduino_homekit_connected_clients_count());
+  //}
 }
+
+
 
 void set_active_1(const homekit_value_t v) {
   uint8_t active = v.uint8_value;
@@ -229,14 +248,13 @@ void set_active_1(const homekit_value_t v) {
     VC1.TurnOff();
     LOG_D("VALVE 1 inactive");
   }
-  //cha_in_use_1.value.uint8_value = active;
-  //homekit_characteristic_notify(&cha_in_use_1, cha_in_use_1.value);
 }
 
 void set_d_1(const homekit_value_t v) {
-  uint16_t duration = v.uint16_value;
-  cha_valve_s_d_1.value.uint16_value = duration;  //sync the value
+  uint32_t duration = v.uint32_value;
+  cha_valve_s_d_1.value.uint32_value = duration;  //sync the value
   VC1.SetDuration(duration);
+  LOG_D("V1 Duration set:%u", v);
 }
 
 
@@ -250,14 +268,13 @@ void set_active_2(const homekit_value_t v) {
     VC2.TurnOff();
     LOG_D("VALVE 2 inactive");
   }
-  //cha_in_use_2.value.uint8_value = active;
-  //homekit_characteristic_notify(&cha_in_use_2, cha_in_use_2.value);
 }
 
 void set_d_2(const homekit_value_t v) {
-  uint16_t duration = v.uint16_value;
-  cha_valve_s_d_2.value.uint16_value = duration;  //sync the value
+  uint32_t duration = v.uint32_value;
+  cha_valve_s_d_2.value.uint32_value = duration;  //sync the value
   VC2.SetDuration(duration);
+  LOG_D("V2 Duration set:%u", v);
 }
 
 void set_active_3(const homekit_value_t v) {
@@ -270,13 +287,12 @@ void set_active_3(const homekit_value_t v) {
     VC3.TurnOff();
     LOG_D("VALVE 3 inactive");
   }
-  //cha_in_use_3.value.uint8_value = active;
-  //homekit_characteristic_notify(&cha_in_use_3, cha_in_use_3.value);
 }
 void set_d_3(const homekit_value_t v) {
-  uint16_t duration = v.uint16_value;
-  cha_valve_s_d_3.value.uint16_value = duration;  //sync the value
+  uint32_t duration = v.uint32_value;
+  cha_valve_s_d_3.value.uint32_value = duration;  //sync the value
   VC3.SetDuration(duration);
+  LOG_D("V3 Duration set:%u", v);
 }
 
 void set_active_4(const homekit_value_t v) {
@@ -289,15 +305,14 @@ void set_active_4(const homekit_value_t v) {
     VC4.TurnOff();
     LOG_D("VALVE 4 inactive");
   }
-  //cha_in_use_4.value.uint8_value = active;
-  //homekit_characteristic_notify(&cha_in_use_4, cha_in_use_4.value);
 }
 
 
 void set_d_4(const homekit_value_t v) {
-  uint16_t duration = v.uint16_value;
-  cha_valve_s_d_4.value.uint16_value = duration;  //sync the value
+  uint32_t duration = v.uint32_value;
+  cha_valve_s_d_4.value.uint32_value = duration;  //sync the value
   VC4.SetDuration(duration);
+  LOG_D("V4 Duration set:%u", v);
 }
 
 

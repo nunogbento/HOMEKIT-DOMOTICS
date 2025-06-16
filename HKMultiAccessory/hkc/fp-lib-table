@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "TRADFRIICC-1dimmer")(type "KiCad")(uri "$(KIPRJMOD)/TRADFRIICC-1dimmer.pretty")(options "")(descr ""))
+)
