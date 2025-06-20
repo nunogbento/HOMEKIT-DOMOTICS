@@ -19,7 +19,7 @@ struct LightBulbService : Service::LightBulb {
   }
 };
 
-class DimmableLightBulbService : Service::LightBulb {
+struct DimmableLightBulbService : Service::LightBulb {
   LedPin *_pin;  // NEW! Create reference to LED Pin instantiated below
 
 
@@ -38,7 +38,7 @@ class DimmableLightBulbService : Service::LightBulb {
   }
 
   boolean update() {
-    _pin->set(On->getNewVal() * Brightness->getNewVal());
+    _pin->fade(On->getNewVal() * Brightness->getNewVal(),200);
     return (true);
   }
 };
@@ -57,7 +57,6 @@ struct CCTLightBulbService : Service::LightBulb {
     : Service::LightBulb() {
 
     On = new Characteristic::On();
-
     Brightness = new Characteristic::Brightness(50);  // NEW! Instantiate the Brightness Characteristic with an initial value of 50% (same as we did in Example 4)
     Brightness->setRange(5, 100, 1);                  // NEW! This sets the range of the Brightness to be from a min of 5%, to a max of 100%, in steps of 1% (different from Example 4 values)
     ColorTemperature = new Characteristic::ColorTemperature(400, true);
@@ -73,16 +72,19 @@ struct CCTLightBulbService : Service::LightBulb {
       return true;
     }
 
-    float level = Brightness->getNewVal() / 100.0;
+    float level = Brightness->getNewVal();
 
     // Map mireds (140–500) to blend factor (0 = cool only, 1 = warm only)
     float mireds = ColorTemperature->getNewVal();
     float blend = (mireds - 140.0) / (500.0 - 140.0);
     blend = constrain(blend, 0.0, 1.0);
 
+    
     // Warm = blend * brightness; Cool = (1 - blend) * brightness
     float wPWM = blend * level;
     float cPWM = (1.0 - blend) * level;
+
+LOG_D("UPDATING LED PWM Wpwm:%d; Cpwm:%d",wPWM,cPWM);
 
     _wPin->fade(wPWM, 200);
     _cPin->fade(cPWM, 200);
@@ -233,8 +235,9 @@ struct LightBulbAccessoryInformation : Service::AccessoryInformation {
     new Characteristic::Identify();
     char c[64];
     sprintf(c, "LightBulb-%d", pin);
-    new Characteristic::Name(c);
+    new Characteristic::Name(c);   
     _pin = new LedPin(pin);
+
   }
 
   boolean update() {

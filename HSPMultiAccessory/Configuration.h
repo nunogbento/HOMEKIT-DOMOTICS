@@ -2,24 +2,24 @@
 #define CONFIGURATION_H_
 
 
-#define ACCESSORY_NAME "LVRL Light"
-#define IR_LED_PIN 10
+#define ACCESSORY_NAME "LS Light"
+#define IR_LED_PIN 21
 
-#define L1PIN 13
-#define L2PIN 14
+#define L1PIN 6
+#define L2PIN 4
 
-#define cw1_LedPin 13
-#define ww1_LedPin 16
-#define cw2_LedPin 14
-#define ww2_LedPin 12
+#define cw1_LedPin 6
+#define ww1_LedPin 5
+#define cw2_LedPin 4
+#define ww2_LedPin 2
 
-#define WHITE_LedPin 13
-#define RED_LedPin 16
-#define GREEN_LedPin 14
-#define BLUE_LedPin 12
+#define WHITE_LedPin 2
+#define RED_LedPin 4
+#define GREEN_LedPin 5
+#define BLUE_LedPin 6
 
-#define SDA_PIN 4
-#define SCL_PIN 5
+#define SDA_PIN 10
+#define SCL_PIN 3
 
 #define LOG_D(fmt, ...)   printf_P(PSTR(fmt "\n") , ##__VA_ARGS__)
 
