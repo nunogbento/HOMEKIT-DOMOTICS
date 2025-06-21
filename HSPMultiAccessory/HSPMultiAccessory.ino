@@ -26,10 +26,13 @@ void setup() {
   
   Wire.begin(SDA_PIN, SCL_PIN);
   homeSpan.setLogLevel(1);
+  homeSpan.setStatusPin(8);
+  homeSpan.setControlPin(9);
   homeSpan.enableOTA(false);
   homeSpan.enableAutoStartAP();
-  homeSpan.begin(Category::Bridges, "LightBulbs");
-
+  homeSpan.setHostNameSuffix("v1");
+  homeSpan.begin(Category::Bridges, "MultiAccessory-LVA","MultiAccessoryLVA");
+  
   new SpanAccessory();  
     new Service::AccessoryInformation();
       new Characteristic::Identify(); 

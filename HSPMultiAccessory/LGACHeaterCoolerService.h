@@ -18,8 +18,8 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
   Characteristic::CurrentHeaterCoolerState currentState{ 0 };  // IDLE
   Characteristic::TargetHeaterCoolerState targetState{ 0 };    // COOL
   Characteristic::CurrentTemperature currentTemp{ 25 };
-  Characteristic::CoolingThresholdTemperature cTargetTemp{ 22 };
-  Characteristic::HeatingThresholdTemperature hTargetTemp{ 24 };
+  Characteristic::CoolingThresholdTemperature cTargetTemp{ 24 };
+  Characteristic::HeatingThresholdTemperature hTargetTemp{ 15 };
 
   Characteristic::RotationSpeed fanSpeed{ 0 };  // 0–100
   Characteristic::SwingMode swingMode{ 0 };     // 0=Off, 1=On
@@ -33,17 +33,18 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
   }
 
   boolean update() override {
-    
+
 
     if ((int)targetState.getNewVal() == 0) {
       Serial.println("Turning OFF AC");
       ac.off();
       ac.send();
       currentState.setVal(0);
-      active.setVal(0);
-      return true;
+    }else{
+      currentState.setVal(1);
     }
-
+    
+   
     // Fan
     int fs = fanSpeed.getNewVal();
     if (fs == 0) {
@@ -56,17 +57,45 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
       ac.setFan(kLgAcFanHigh);
     }
 
-    // Swing    
-    ac.setSwingV(swingMode.getNewVal() == 1? true:false);
-    
+    // Swing
+    ac.setSwingV(swingMode.getNewVal() == 1 ? true : false);
+
     return true;
   }
 
   void loop() override {
     if (currentTemp.timeVal() > 5000) {  // check time elapsed since last update and proceed only if greater than 5 seconds
-     
+
       if (sensor->measure()) {
-        currentTemp.setVal(sensor->getTemperature());
+        float cTemp = sensor->getTemperature();
+
+        currentTemp.setVal(cTemp);
+
+        // Thermostat
+        if (currentState.getVal() != 0) {  //AC is not off
+
+          if (targetState.getVal() != 2 && currentState.getVal() !=2 and cTemp < hTargetTemp.getVal<float>() - T_hysteresys) {  // NEDS TO START HEATING THE PLACE
+            ac.on();
+            ac.setTemp((int)hTargetTemp.getVal());
+            ac.setMode(kLgAcHeat);
+            currentState.setVal(2);
+            //active.setVal(1);
+            ac.send();
+          } else if (targetState.getVal() != 1 && currentState.getVal() !=3 and cTemp > cTargetTemp.getVal<float>() + T_hysteresys) {  // NEDS TO START cooling THE PLACE
+            ac.on();
+            ac.setTemp((int)cTargetTemp.getVal());
+            ac.setMode(kLgAcCool);
+            //active.setVal(1);
+            currentState.setVal(3);
+            ac.send();
+          } else if ((currentState.getVal() == 2 && cTemp > hTargetTemp.getVal<float>() + T_hysteresys) || (currentState.getVal() == 3 && cTemp < cTargetTemp.getVal<float>() - T_hysteresys)) {
+            ac.off();
+            //active.setVal(0);
+            currentState.setVal(1);
+            ac.send();
+          }
+        }
+
       } else {  // error has occured
         int errorCode = sensor->getErrorCode();
         switch (errorCode) {
@@ -74,31 +103,7 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
           case 2: LOG_D("ERR: CRC validation failed."); break;
         }
       }
-
-      //Implement Thermostat
-      if (targetState.getNewVal() != 0) {  //is not off
-
-        if (targetState.getNewVal() != 2 && active.getNewVal() == 0 and currentTemp.getNewVal() < cTargetTemp.getNewVal() - T_hysteresys) {  // NEDS TO START HEATING THE PLACE
-          ac.on();
-          ac.setTemp((int)hTargetTemp.getNewVal());
-          ac.setMode(kLgAcHeat);
-          currentState.setVal(1);
-          active.setVal(1);
-          ac.send();
-        } else if (targetState.getNewVal() != 1 && active.getNewVal() == 0 and currentTemp.getNewVal() > hTargetTemp.getNewVal() + T_hysteresys) {  // NEDS TO START cooling THE PLACE
-          ac.on();
-          ac.setTemp((int)cTargetTemp.getNewVal());
-          ac.setMode(kLgAcCool);
-          active.setVal(1);
-          currentState.setVal(2);
-          ac.send();
-        } else if (active.getNewVal() == 1 && ((targetState.getNewVal() == 1 && currentTemp.getNewVal() > cTargetTemp.getNewVal() + T_hysteresys) || (targetState.getNewVal() == 2 && currentTemp.getNewVal() < hTargetTemp.getNewVal() - T_hysteresys))) {
-          ac.off();
-          active.setVal(0);         
-          ac.send();
-        }
-      }
-     
+      
     }
   }
 };
