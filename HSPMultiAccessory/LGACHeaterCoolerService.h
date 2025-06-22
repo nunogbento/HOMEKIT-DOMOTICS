@@ -28,8 +28,10 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
 
   LGACHeaterCoolerService(uint8_t irLedPin)
     : ac(irLedPin) {
+    
     fanSpeed.setRange(0, 100, 25);  // Map to Auto, Low, Med, High
     sensor = new AM2320();
+    ac.begin();
   }
 
   boolean update() override {
