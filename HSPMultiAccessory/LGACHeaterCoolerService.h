@@ -6,7 +6,6 @@
 
 #define _IR_ENABLE_DEFAULT_ false
 #define SEND_LG true
-
 #define T_hysteresys 0.9
 
 struct LGACHeaterCoolerService : Service::HeaterCooler {
@@ -20,7 +19,6 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
   Characteristic::CurrentTemperature currentTemp{ 25 };
   Characteristic::CoolingThresholdTemperature cTargetTemp{ 24 };
   Characteristic::HeatingThresholdTemperature hTargetTemp{ 15 };
-
   Characteristic::RotationSpeed fanSpeed{ 0 };  // 0–100
   Characteristic::SwingMode swingMode{ 0 };     // 0=Off, 1=On
 
@@ -39,7 +37,7 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
 
     //target status changed
     if (targetState.updated()) {
-      if (targetState.getNewVal() == 0)
+      if (targetState.getNewVal() == 0) //Off
         ac.off();
       currentState.setVal(0);
       AC_updated = true;
@@ -57,7 +55,7 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
       AC_updated = true;
     } else if (targetState.getNewVal() == 3) {  //AUTO
       ac.on();
-      currentState.setVal(1);
+      currentState.setVal(1); //start in idle let the thermostat in loop do the rest
       AC_updated = true;
     }
     // Fan speed changed
@@ -76,12 +74,12 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
     }
 
     //Target Temperature changed
-    if (hTargetTemp.updated() && currentState.getVal()==2) {
+    if (hTargetTemp.updated() && currentState.getVal() == 2) {
       ac.setTemp((int)hTargetTemp.getNewVal());
       AC_updated = true;
     }
 
-    if (cTargetTemp.updated() && currentState.getVal()==3) {
+    if (cTargetTemp.updated() && currentState.getVal() == 3) {
       ac.setTemp((int)cTargetTemp.getNewVal());
       AC_updated = true;
     }
@@ -97,13 +95,9 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
 
   void loop() override {
     if (currentTemp.timeVal() > 5000) {  // check time elapsed since last update and proceed only if greater than 5 seconds
-
       if (sensor->measure()) {
         float cTemp = sensor->getTemperature();
-
         currentTemp.setVal(cTemp);
-
-
         if (currentState.getVal() != 0) {  //AC is not off
           // thermostat
           if (targetState.getVal() != 2 && currentState.getVal() != 2 && cTemp < hTargetTemp.getVal<float>() - T_hysteresys) {  // NEDS TO START HEATING THE PLACE
@@ -121,18 +115,17 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
             AC_updated = true;
           }
         }
-      }
-
-    } else {  // error has occured
-      int errorCode = sensor->getErrorCode();
-      switch (errorCode) {
-        case 1: LOG_D("ERR: Sensor is offline"); break;
-        case 2: LOG_D("ERR: CRC validation failed."); break;
+      } else {  // error has occured
+        int errorCode = sensor->getErrorCode();
+        switch (errorCode) {
+          case 1: LOG_D("ERR: Sensor is offline"); break;
+          case 2: LOG_D("ERR: CRC validation failed."); break;
+        };
       }
     }
     if (AC_updated) {
       ac.send();
-      AC_updated = false; 
+      AC_updated = false;
     }
   }
 };

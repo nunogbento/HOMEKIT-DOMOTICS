@@ -25,10 +25,10 @@ struct DimmableLightBulbService : Service::LightBulb {
 
   SpanCharacteristic *On;
   SpanCharacteristic *Brightness;
-
-  DimmableLightBulbService(u_int pin)
+  u_int _fadeMillis;
+  DimmableLightBulbService(u_int pin, u_int fadeMillis = 200)
     : Service::LightBulb() {
-
+    _fadeMillis = fadeMillis;
     On = new Characteristic::On();
 
     Brightness = new Characteristic::Brightness(50);  // NEW! Instantiate the Brightness Characteristic with an initial value of 50% (same as we did in Example 4)
@@ -38,7 +38,7 @@ struct DimmableLightBulbService : Service::LightBulb {
   }
 
   boolean update() {
-    _pin->fade(On->getNewVal() * Brightness->getNewVal(),200);
+    _pin->fade(On->getNewVal() * Brightness->getNewVal(), _fadeMillis);
     return (true);
   }
 };
@@ -47,15 +47,15 @@ struct DimmableLightBulbService : Service::LightBulb {
 struct CCTLightBulbService : Service::LightBulb {
   LedPin *_cPin;
   LedPin *_wPin;  // NEW! Create reference to LED Pin instantiated below
-
+  u_int _fadeMillis;
 
   SpanCharacteristic *On;
   SpanCharacteristic *Brightness;
   SpanCharacteristic *ColorTemperature;
 
-  CCTLightBulbService(u_int cPin, u_int wPin)
+  CCTLightBulbService(u_int cPin, u_int wPin, u_int fadeMillis = 200)
     : Service::LightBulb() {
-
+    _fadeMillis = fadeMillis;
     On = new Characteristic::On();
     Brightness = new Characteristic::Brightness(50);  // NEW! Instantiate the Brightness Characteristic with an initial value of 50% (same as we did in Example 4)
     Brightness->setRange(5, 100, 1);                  // NEW! This sets the range of the Brightness to be from a min of 5%, to a max of 100%, in steps of 1% (different from Example 4 values)
@@ -67,8 +67,8 @@ struct CCTLightBulbService : Service::LightBulb {
 
   boolean update() {
     if (!On->getNewVal()) {
-      _wPin->fade(0, 200);
-      _cPin->fade(0, 200);
+      _wPin->fade(0, _fadeMillis);
+      _cPin->fade(0, _fadeMillis);
       return true;
     }
 
@@ -79,26 +79,26 @@ struct CCTLightBulbService : Service::LightBulb {
     float blend = (mireds - 140.0) / (500.0 - 140.0);
     blend = constrain(blend, 0.0, 1.0);
 
-    
+
     // Warm = blend * brightness; Cool = (1 - blend) * brightness
     float wPWM = blend * level;
     float cPWM = (1.0 - blend) * level;
 
-LOG_D("UPDATING LED PWM Wpwm:%d; Cpwm:%d",wPWM,cPWM);
+    LOG_D("UPDATING LED PWM Wpwm:%d; Cpwm:%d", wPWM, cPWM);
 
-    _wPin->fade(wPWM, 200);
-    _cPin->fade(cPWM, 200);
+    _wPin->fade(wPWM, _fadeMillis);
+    _cPin->fade(cPWM, _fadeMillis);
     return (true);
   }
 };
 
 
-class RGBLightBulbService : Service::LightBulb {
+struct RGBLightBulbService : Service::LightBulb {
   LedPin *_rPin;
   LedPin *_gPin;
   LedPin *_bPin;  // NEW! Create reference to LED Pin instantiated below
   LedPin *_wPin;
-
+  u_int _fadeMillis;
   bool isRGBW = false;
   u_int rgb_colors[4] = { 0, 0, 0, 0 };
 
@@ -107,9 +107,9 @@ class RGBLightBulbService : Service::LightBulb {
   SpanCharacteristic *Hue;
   SpanCharacteristic *Saturation;
 
-  RGBLightBulbService(u_int rPin, u_int gPin, u_int bPin)
+  RGBLightBulbService(u_int rPin, u_int gPin, u_int bPin, u_int wPin = 999, u_int fadeMillis = 200)
     : Service::LightBulb() {
-
+    _fadeMillis = fadeMillis;
     On = new Characteristic::On();
     Brightness = new Characteristic::Brightness(50);  // NEW! Instantiate the Brightness Characteristic with an initial value of 50% (same as we did in Example 4)
     Brightness->setRange(5, 100, 1);                  // NEW! This sets the range of the Brightness to be from a min of 5%, to a max of 100%, in steps of 1% (different from Example 4 values)
@@ -119,21 +119,21 @@ class RGBLightBulbService : Service::LightBulb {
     _rPin = new LedPin(rPin);
     _gPin = new LedPin(gPin);
     _bPin = new LedPin(bPin);
+    if (wPin != 999) {
+      isRGBW = true;
+      _wPin = new LedPin(wPin);
+    }
   }
 
-  RGBLightBulbService(u_int rPin, u_int gPin, u_int bPin, u_int wPin)
-    :RGBLightBulbService(rPin, gPin, bPin) {
-    isRGBW = true;
-    _wPin = new LedPin(wPin);
-  }
+
 
   boolean update() {
     if (!On->getNewVal()) {
-      _rPin->fade(0, 200);
-      _gPin->fade(0, 200);
-      _bPin->fade(0, 200);
+      _rPin->fade(0, _fadeMillis);
+      _gPin->fade(0, _fadeMillis);
+      _bPin->fade(0, _fadeMillis);
       if (isRGBW)
-        _wPin->fade(0, 200);
+        _wPin->fade(0, _fadeMillis);
       return true;
     }
 
@@ -146,11 +146,11 @@ class RGBLightBulbService : Service::LightBulb {
     else
       hsi2rgb(h, s, v, rgb_colors);
 
-    _rPin->fade(rgb_colors[0], 200);
-    _gPin->fade(rgb_colors[1], 200);
-    _bPin->fade(rgb_colors[2], 200);
+    _rPin->fade(rgb_colors[0], _fadeMillis);
+    _gPin->fade(rgb_colors[1], _fadeMillis);
+    _bPin->fade(rgb_colors[2], _fadeMillis);
     if (isRGBW)
-      _wPin->fade(rgb_colors[3], 200);
+      _wPin->fade(rgb_colors[3], _fadeMillis);
 
     return (true);
   }
@@ -235,9 +235,8 @@ struct LightBulbAccessoryInformation : Service::AccessoryInformation {
     new Characteristic::Identify();
     char c[64];
     sprintf(c, "LightBulb-%d", pin);
-    new Characteristic::Name(c);   
+    new Characteristic::Name(c);
     _pin = new LedPin(pin);
-
   }
 
   boolean update() {

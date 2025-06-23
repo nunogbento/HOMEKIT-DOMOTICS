@@ -43,7 +43,11 @@ void setup() {
 
   new SpanAccessory();
     new LightBulbAccessoryInformation(cw2_LedPin);  // instantiate a new DEV_INFO structure that will run our custom identification routine to blink an LED on pin 13 three times   
-    new CCTLightBulbService(cw2_LedPin, ww2_LedPin);
+    new DimmableLightBulbService(cw2_LedPin);
+
+  new SpanAccessory();
+    new LightBulbAccessoryInformation(ww2_LedPin);  // instantiate a new DEV_INFO structure that will run our custom identification routine to blink an LED on pin 13 three times   
+    new DimmableLightBulbService(ww2_LedPin);
 
   // new SpanAccessory();
   //  new Service::AccessoryInformation();
