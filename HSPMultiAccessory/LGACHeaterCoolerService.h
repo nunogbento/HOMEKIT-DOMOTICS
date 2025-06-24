@@ -1,3 +1,4 @@
+#include "IRsend.h"
 #include <HomeSpan.h>
 #include <ir_LG.h>
 #include <Wire.h>
@@ -30,34 +31,42 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
 
     fanSpeed.setRange(0, 100, 25);  // Map to Auto, Low, Med, High
     sensor = new AM2320();
+    ac.calibrate();
+    ac.setModel(lg_ac_remote_model_t::AKB75215403);
     ac.begin();
   }
 
   boolean update() override {
 
-    //target status changed
-    if (targetState.updated()) {
-      if (targetState.getNewVal() == 0) //Off
+    //Active status changed
+    if (active.updated()) {
+      if (active.getNewVal() == 0) {  //Off
         ac.off();
-      currentState.setVal(0);
-      AC_updated = true;
-    } else if (targetState.getNewVal() == 1) {  //HEATING
-      ac.on();
-      ac.setTemp((int)hTargetTemp.getVal());
-      ac.setMode(kLgAcHeat);
-      currentState.setVal(2);
-      AC_updated = true;
-    } else if (targetState.getNewVal() == 2) {  //COOLING
-      ac.on();
-      ac.setTemp((int)cTargetTemp.getVal());
-      ac.setMode(kLgAcCool);
-      currentState.setVal(3);
-      AC_updated = true;
-    } else if (targetState.getNewVal() == 3) {  //AUTO
-      ac.on();
-      currentState.setVal(1); //start in idle let the thermostat in loop do the rest
+        currentState.setVal(0);
+      } else {
+        ac.on();
+        currentState.setVal(1);
+      }
       AC_updated = true;
     }
+
+
+    //target status changed
+    if (targetState.updated()) {
+      if (targetState.getNewVal() == 0) {  //AUTO -> set idle leave to the thermostat in loop to manage
+        currentState.setVal(1);
+      } else if (targetState.getNewVal() == 1) {  //HEATING
+        ac.setTemp((int)hTargetTemp.getVal());
+        ac.setMode(kLgAcHeat);
+        currentState.setVal(2);
+      } else if (targetState.getNewVal() == 2) {  //COOLING
+        ac.setTemp((int)cTargetTemp.getVal());
+        ac.setMode(kLgAcCool);
+        currentState.setVal(3);
+      }
+      AC_updated = true;
+    }
+
     // Fan speed changed
     if (fanSpeed.updated()) {
       int fs = fanSpeed.getNewVal();
@@ -98,23 +107,23 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
       if (sensor->measure()) {
         float cTemp = sensor->getTemperature();
         currentTemp.setVal(cTemp);
-        if (currentState.getVal() != 0) {  //AC is not off
-          // thermostat
-          if (targetState.getVal() != 2 && currentState.getVal() != 2 && cTemp < hTargetTemp.getVal<float>() - T_hysteresys) {  // NEDS TO START HEATING THE PLACE
-            ac.setTemp((int)hTargetTemp.getVal());
-            ac.setMode(kLgAcHeat);
-            currentState.setVal(2);
-            AC_updated = true;
-          } else if (targetState.getVal() != 1 && currentState.getVal() != 3 && cTemp > cTargetTemp.getVal<float>() + T_hysteresys) {  // NEDS TO START cooling THE PLACE
-            ac.setTemp((int)cTargetTemp.getVal());
-            ac.setMode(kLgAcCool);
-            currentState.setVal(3);
-            AC_updated = true;
-          } else if ((currentState.getVal() == 2 && cTemp > hTargetTemp.getVal<float>() + T_hysteresys) || (currentState.getVal() == 3 && cTemp < cTargetTemp.getVal<float>() - T_hysteresys)) {
-            currentState.setVal(1);
-            AC_updated = true;
-          }
+
+        // thermostat
+        if (targetState.getVal() != 2 && currentState.getVal() == 1 && cTemp < hTargetTemp.getVal<float>() - T_hysteresys) {  // NEDS TO START HEATING THE PLACE
+          ac.setTemp((int)hTargetTemp.getVal());
+          ac.setMode(kLgAcHeat);
+          currentState.setVal(2);
+          AC_updated = true;
+        } else if (targetState.getVal() != 1 && currentState.getVal() == 1 && cTemp > cTargetTemp.getVal<float>() + T_hysteresys) {  // NEDS TO START cooling THE PLACE
+          ac.setTemp((int)cTargetTemp.getVal());
+          ac.setMode(kLgAcCool);
+          currentState.setVal(3);
+          AC_updated = true;
+        } else if ((currentState.getVal() == 2 && cTemp > hTargetTemp.getVal<float>() + T_hysteresys) || (currentState.getVal() == 3 && cTemp < cTargetTemp.getVal<float>() - T_hysteresys)) {
+          currentState.setVal(1);
+          AC_updated = true;
         }
+
       } else {  // error has occured
         int errorCode = sensor->getErrorCode();
         switch (errorCode) {
@@ -124,6 +133,7 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
       }
     }
     if (AC_updated) {
+      Serial.println("AC Status UPDATE SENT TO IR:" + ac.toString());
       ac.send();
       AC_updated = false;
     }

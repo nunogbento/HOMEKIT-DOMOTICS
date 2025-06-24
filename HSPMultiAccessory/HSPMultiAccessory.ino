@@ -6,23 +6,11 @@
 #include "TemperatureAndHumidityService.h"
 #include "LGACHeaterCoolerService.h"
 #include <Wire.h>
-//#include "PowerCycleDetector.h"
 
-//PowerCycleDetector resetDetector;
 
 void setup() {
 
   Serial.begin(115200);
-
-   // Configure: 3 cycles within 6 seconds = trigger
-  //resetDetector.begin(3, 60000);
-
-  //if (resetDetector.wasTriggered()) {
-    //LOG_D("Power cycle reset detected — resetting HomeKit pairing...");
-   // homeSpan.reset();  // Reset HomeKit pairing
-    //delay(2000);
-    //ESP.restart();     // Reboot
-  //} 
   
   Wire.begin(SDA_PIN, SCL_PIN);
   homeSpan.setLogLevel(1);
@@ -44,9 +32,6 @@ void setup() {
   new SpanAccessory();
     new LightBulbAccessoryInformation(cw2_LedPin);  // instantiate a new DEV_INFO structure that will run our custom identification routine to blink an LED on pin 13 three times   
     new DimmableLightBulbService(cw2_LedPin);
-
-  new SpanAccessory();
-    new LightBulbAccessoryInformation(ww2_LedPin);  // instantiate a new DEV_INFO structure that will run our custom identification routine to blink an LED on pin 13 three times   
     new DimmableLightBulbService(ww2_LedPin);
 
   // new SpanAccessory();
