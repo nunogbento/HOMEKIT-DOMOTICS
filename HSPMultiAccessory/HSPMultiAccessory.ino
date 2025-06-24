@@ -26,12 +26,21 @@ void setup() {
       new Characteristic::Identify(); 
 
   new SpanAccessory();
-    new LightBulbAccessoryInformation(cw1_LedPin);  // instantiate a new DEV_INFO structure that will run our custom identification routine to blink an LED on pin 13 three times
+    new Service::AccessoryInformation();
+      new Characteristic::Identify(); 
+      new Characteristic::Name("CCT Led Strip");
     new CCTLightBulbService(cw1_LedPin, ww1_LedPin);
 
   new SpanAccessory();
-    new LightBulbAccessoryInformation(cw2_LedPin);  // instantiate a new DEV_INFO structure that will run our custom identification routine to blink an LED on pin 13 three times   
+    new Service::AccessoryInformation();
+      new Characteristic::Identify(); 
+      new Characteristic::Name("Led Strip 1");
     new DimmableLightBulbService(cw2_LedPin);
+    
+  new SpanAccessory();
+   new Service::AccessoryInformation();
+      new Characteristic::Identify(); 
+      new Characteristic::Name("Led Strip 2");
     new DimmableLightBulbService(ww2_LedPin);
 
   // new SpanAccessory();
