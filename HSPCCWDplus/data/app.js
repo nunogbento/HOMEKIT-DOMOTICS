@@ -325,7 +325,8 @@ async function handleSave() {
 // WebSocket Terminal functions
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    // WebSocket is on port 81 (separate from HTTP on port 80)
+    const wsUrl = `${protocol}//${window.location.hostname}:81/`;
 
     state.ws = new WebSocket(wsUrl);
 

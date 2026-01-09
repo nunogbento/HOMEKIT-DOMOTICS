@@ -13,6 +13,8 @@
 #include "MCP23017Handler.h"
 #include "ConfigManager.h"
 #include "PinAccessoryFactory.h"
+
+// Web server with WebSocket for HomeSpan CLI
 #include "WebConfigServer.h"
 
 // PWM Dimmable LED (hardcoded on GPIO2)
@@ -43,7 +45,8 @@ uint8_t in10wdBaseAddress = DEFAULT_IN10WD_ADDRESS;
 MCP23017Handler mcpHandler(MCP23017_ADDR);
 ConfigManager configManager;
 PinAccessoryFactory pinFactory;
-WebConfigServer webServer;
+WebConfigServer* webServer = nullptr;
+bool webServerStarted = false;
 
 // Sensor polling interval
 const unsigned long SENSOR_POLL_INTERVAL = 100;  // 100ms
@@ -159,13 +162,9 @@ void setup() {
     Serial.println("MCP23017 accessories created");
   }
 
-  // ============================================
-  // Start Web Server
-  // ============================================
-
-  webServer.begin(configManager, mcpHandler);
-  teeSerial.setWebServer(&webServer);
-  Serial.println("Web configuration server started");
+  // Web server will be started in loop() after WiFi connects
+  // to avoid port 80 conflict with HomeSpan's AP setup portal
+  webServer = new WebConfigServer();
 
   Serial.println("=== Setup Complete ===\n");
 
@@ -180,8 +179,15 @@ void loop() {
   // PCCWD bus polling
   pccwdController.loop();
 
-  // Web server polling (for WebSocket)
-  webServer.loop();
+  // Start web server once WiFi is connected (avoid port 80 conflict with HomeSpan AP)
+  if (!webServerStarted && WiFi.status() == WL_CONNECTED && webServer) {
+    webServer->begin(configManager, mcpHandler);
+    webServerStarted = true;
+    Serial.printf("Web config server started at http://%s/\n", WiFi.localIP().toString().c_str());
+  }
+
+  // Web server polling (only after started)
+  if (webServerStarted && webServer) webServer->loop();
 
   // MCP23017 sensor polling (at reduced rate)
   unsigned long now = millis();

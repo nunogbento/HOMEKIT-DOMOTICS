@@ -2,53 +2,24 @@
 #define WEB_CONFIG_SERVER_H
 
 #include <Arduino.h>
-#include <ESPAsyncWebServer.h>
+#include <WebServer.h>
+#include <WebSocketsServer.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include "HomeSpan.h"
 #include "ConfigManager.h"
 #include "MCP23017Handler.h"
 
-// Circular buffer for capturing Serial output
-#define SERIAL_BUFFER_SIZE 4096
-
 // Forward declaration
 class WebConfigServer;
-
-// TeeSerial class - writes to both Serial and web buffer
-class TeeSerial : public Print {
-public:
-    TeeSerial() : _webServer(nullptr) {}
-
-    void begin(unsigned long baud) {
-        Serial.begin(baud);
-    }
-
-    void setWebServer(WebConfigServer* server) {
-        _webServer = server;
-    }
-
-    virtual size_t write(uint8_t c) override;
-    virtual size_t write(const uint8_t *buffer, size_t size) override;
-
-    // Delegate other Serial methods
-    int available() { return Serial.available(); }
-    int read() { return Serial.read(); }
-    int peek() { return Serial.peek(); }
-    void flush() { Serial.flush(); }
-
-private:
-    WebConfigServer* _webServer;
-};
-
-// Global TeeSerial instance
-extern TeeSerial teeSerial;
+WebConfigServer* _webServerInstance = nullptr;
 
 class WebConfigServer {
 public:
-    WebConfigServer(uint16_t port = 80)
-        : _server(port), _ws("/ws"), _config(nullptr), _mcp(nullptr),
-          _bufferHead(0), _bufferTail(0) {}
+    WebConfigServer(uint16_t httpPort = 80, uint16_t wsPort = 81)
+        : _server(httpPort), _wsServer(wsPort), _config(nullptr), _mcp(nullptr) {
+        _webServerInstance = this;
+    }
 
     void begin(ConfigManager& config, MCP23017Handler& mcp) {
         _config = &config;
@@ -56,152 +27,223 @@ public:
         setupRoutes();
         setupWebSocket();
         _server.begin();
-        Serial.printf("Web server started on port 80\n");
+        _wsServer.begin();
+        Serial.printf("Web server started on port 80, WebSocket on port 81\n");
     }
 
-    // Call this in loop() to send buffered output to WebSocket clients
     void loop() {
-        if (_bufferHead != _bufferTail && _ws.count() > 0) {
-            String output = "";
-            while (_bufferHead != _bufferTail && output.length() < 1024) {
-                output += _serialBuffer[_bufferTail];
-                _bufferTail = (_bufferTail + 1) % SERIAL_BUFFER_SIZE;
-            }
-            if (output.length() > 0) {
-                _ws.textAll(output);
-            }
-        }
-        _ws.cleanupClients();
-    }
-
-    // Write character to buffer (call from custom Serial output)
-    void writeToBuffer(char c) {
-        size_t nextHead = (_bufferHead + 1) % SERIAL_BUFFER_SIZE;
-        if (nextHead != _bufferTail) {  // Don't overwrite unread data
-            _serialBuffer[_bufferHead] = c;
-            _bufferHead = nextHead;
-        }
-    }
-
-    // Write string to buffer
-    void writeToBuffer(const char* str) {
-        while (*str) {
-            writeToBuffer(*str++);
-        }
+        _server.handleClient();
+        _wsServer.loop();
     }
 
 private:
-    AsyncWebServer _server;
-    AsyncWebSocket _ws;
+    WebServer _server;
+    WebSocketsServer _wsServer;
     ConfigManager* _config;
     MCP23017Handler* _mcp;
-
-    // Circular buffer for serial output capture
-    char _serialBuffer[SERIAL_BUFFER_SIZE];
-    volatile size_t _bufferHead;
-    volatile size_t _bufferTail;
+    String _cmdBuffer;  // Buffer for multi-char commands
 
     void setupWebSocket() {
-        _ws.onEvent([this](AsyncWebSocket *server, AsyncWebSocketClient *client,
-                          AwsEventType type, void *arg, uint8_t *data, size_t len) {
-            handleWebSocketEvent(server, client, type, arg, data, len);
+        _wsServer.onEvent([this](uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
+            handleWebSocketEvent(num, type, payload, length);
         });
-        _server.addHandler(&_ws);
     }
 
-    void handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
-                              AwsEventType type, void *arg, uint8_t *data, size_t len) {
+    void handleWebSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
         switch (type) {
-            case WS_EVT_CONNECT:
-                Serial.printf("WebSocket client #%u connected\n", client->id());
-                client->text("HomeSpan CLI - Type '?' for help\r\n");
+            case WStype_DISCONNECTED:
+                Serial.printf("[WS] Client #%u disconnected\n", num);
                 break;
 
-            case WS_EVT_DISCONNECT:
-                Serial.printf("WebSocket client #%u disconnected\n", client->id());
+            case WStype_CONNECTED: {
+                IPAddress ip = _wsServer.remoteIP(num);
+                Serial.printf("[WS] Client #%u connected from %s\n", num, ip.toString().c_str());
+                _wsServer.sendTXT(num, "\r\n*** HomeSpan CLI (Web Terminal) ***\r\n");
+                _wsServer.sendTXT(num, "Type '?' for available commands\r\n\r\n");
                 break;
+            }
 
-            case WS_EVT_DATA: {
-                AwsFrameInfo *info = (AwsFrameInfo*)arg;
-                if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
-                    // Process each character through HomeSpan CLI
-                    for (size_t i = 0; i < len; i++) {
-                        char c = (char)data[i];
-                        // Echo the character back
-                        if (c == '\r' || c == '\n') {
-                            writeToBuffer("\r\n");
-                        } else {
-                            writeToBuffer(c);
+            case WStype_TEXT: {
+                String input = String((char*)payload).substring(0, length);
+
+                // Echo input
+                _wsServer.sendTXT(num, input + "\r\n");
+
+                // Process command
+                for (size_t i = 0; i < length; i++) {
+                    char c = (char)payload[i];
+                    if (c == '\r' || c == '\n') {
+                        if (_cmdBuffer.length() > 0) {
+                            processCommand(num, _cmdBuffer);
+                            _cmdBuffer = "";
                         }
-                        // Send to HomeSpan CLI processor
-                        char cmd[2] = {c, '\0'};
-                        homeSpan.processSerialCommand(cmd);
+                    } else {
+                        _cmdBuffer += c;
+                        // Single char commands (HomeSpan style)
+                        if (_cmdBuffer.length() == 1 && !isDigit(c)) {
+                            processCommand(num, _cmdBuffer);
+                            _cmdBuffer = "";
+                        }
                     }
                 }
                 break;
             }
 
-            case WS_EVT_PONG:
-            case WS_EVT_ERROR:
+            default:
                 break;
         }
     }
 
+    void processCommand(uint8_t clientNum, const String& cmd) {
+        String response = "";
+        char c = cmd.charAt(0);
+
+        // Also send to HomeSpan for commands it handles internally
+        homeSpan.processSerialCommand(cmd.c_str());
+
+        // Generate our own response for display
+        switch (c) {
+            case '?':
+                response = "\r\n*** HomeSpan Commands ***\r\n\r\n";
+                response += "  D - disconnect/reconnect to WiFi\r\n";
+                response += "  Z - scan for available WiFi networks\r\n";
+                response += "\r\n";
+                response += "  R - restart device\r\n";
+                response += "  F - factory reset and restart\r\n";
+                response += "  E - erase ALL stored data and restart\r\n";
+                response += "\r\n";
+                response += "  L <level> - change Log Level (0/1/2)\r\n";
+                response += "\r\n";
+                response += "  i - device/service info\r\n";
+                response += "  d - accessories database (JSON)\r\n";
+                response += "\r\n";
+                response += "  ? - print this list of commands\r\n";
+                response += "\r\n*** End Commands ***\r\n\r\n";
+                break;
+
+            case 'i': {
+                response = "\r\n*** Device Info ***\r\n\r\n";
+                response += "Service                             UUID         AID  IID  Update  Loop  Button  Linked\r\n";
+                response += "------------------------------  --------  ----------  ---  ------  ----  ------  ------\r\n";
+                // Note: Full service table requires HomeSpan internals access
+                // Show summary info instead
+                response += "(Service table - see serial output for full details)\r\n\r\n";
+                response += "Configured as Bridge: YES\r\n\r\n";
+                response += "WiFi SSID: " + WiFi.SSID() + "\r\n";
+                response += "IP Address: " + WiFi.localIP().toString() + "\r\n";
+                response += "MAC Address: " + WiFi.macAddress() + "\r\n";
+                response += "RSSI: " + String(WiFi.RSSI()) + " dBm\r\n";
+                response += "Free Heap: " + String(ESP.getFreeHeap()) + " bytes\r\n";
+                response += "Uptime: " + String(millis() / 1000) + " seconds\r\n";
+                response += "\r\n*** End Info ***\r\n\r\n";
+                break;
+            }
+
+            case 'd':
+                response = "\r\n*** Accessories Database ***\r\n\r\n";
+                response += "(Full JSON database - see serial output)\r\n";
+                response += "Configured accessories: " + String(_config ? _config->countAccessories() : 0) + "\r\n";
+                response += "MCP23017: " + String(_mcp && _mcp->isConnected() ? "Connected" : "Not found") + "\r\n";
+                response += "\r\n*** End Database ***\r\n\r\n";
+                break;
+
+            case 'D':
+                response = "\r\nDisconnecting/reconnecting WiFi...\r\n";
+                response += "(Command sent to HomeSpan)\r\n\r\n";
+                break;
+
+            case 'Z':
+                response = "\r\nScanning for WiFi networks...\r\n";
+                response += "(See serial output for scan results)\r\n\r\n";
+                break;
+
+            case 'R':
+                response = "\r\n*** Restarting device... ***\r\n\r\n";
+                _wsServer.sendTXT(clientNum, response);
+                delay(500);
+                ESP.restart();
+                return;
+
+            case 'F':
+                response = "\r\n*** Factory Reset ***\r\n";
+                response += "WARNING: This will erase HomeKit pairing data!\r\n";
+                response += "(Command sent to HomeSpan - confirm via serial if needed)\r\n\r\n";
+                break;
+
+            case 'E':
+                response = "\r\n*** Erase ALL Data ***\r\n";
+                response += "WARNING: This erases WiFi credentials and all settings!\r\n";
+                response += "(Command sent to HomeSpan - device will restart)\r\n\r\n";
+                break;
+
+            case 'L':
+                response = "\r\nLog level command sent to HomeSpan\r\n";
+                response += "Use L0 (errors), L1 (warnings), or L2 (all)\r\n\r\n";
+                break;
+
+            case 'W':
+                response = "\r\n*** WiFi Setup ***\r\n";
+                response += "This is an interactive command.\r\n";
+                response += "Please use serial terminal for WiFi configuration.\r\n\r\n";
+                response += "Current WiFi Status:\r\n";
+                response += "  SSID: " + WiFi.SSID() + "\r\n";
+                response += "  IP: " + WiFi.localIP().toString() + "\r\n";
+                response += "  RSSI: " + String(WiFi.RSSI()) + " dBm\r\n\r\n";
+                break;
+
+            default:
+                if (c >= '0' && c <= '9') {
+                    response = "\r\nNumeric command '" + cmd + "' sent to HomeSpan\r\n\r\n";
+                } else {
+                    response = "\r\nUnknown command '" + cmd + "'\r\n";
+                    response += "Type '?' for list of commands\r\n\r\n";
+                }
+                break;
+        }
+
+        _wsServer.sendTXT(clientNum, response);
+    }
+
     void setupRoutes() {
+        // Enable CORS
+        _server.enableCORS(true);
+
         // Serve static files from LittleFS
-        _server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+        _server.on("/", HTTP_GET, [this]() { serveFile("/index.html", "text/html"); });
+        _server.on("/index.html", HTTP_GET, [this]() { serveFile("/index.html", "text/html"); });
+        _server.on("/app.js", HTTP_GET, [this]() { serveFile("/app.js", "application/javascript"); });
+        _server.on("/style.css", HTTP_GET, [this]() { serveFile("/style.css", "text/css"); });
 
         // API: Get full configuration
-        _server.on("/api/config", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        _server.on("/api/config", HTTP_GET, [this]() {
             if (!_config) {
-                sendError(request, 500, "Config not initialized");
+                sendError(500, "Config not initialized");
                 return;
             }
-            sendJson(request, 200, _config->toJson());
+            _server.send(200, "application/json", _config->toJson());
         });
 
-        // API: Save full configuration
-        _server.on("/api/config", HTTP_PUT,
-            [](AsyncWebServerRequest *request) {},
-            NULL,
-            [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-                handlePutConfig(request, data, len, index, total);
-            }
-        );
-
-        // API: Get single pin config
-        _server.on("^\\/api\\/pins\\/(\\d+)$", HTTP_GET, [this](AsyncWebServerRequest *request) {
-            int pin = request->pathArg(0).toInt();
-            if (pin < 0 || pin >= NUM_PINS) {
-                sendError(request, 400, "Invalid pin number");
+        // API: Save full configuration (PUT)
+        _server.on("/api/config", HTTP_PUT, [this]() {
+            if (!_config) {
+                sendError(500, "Config not initialized");
                 return;
             }
 
-            const PinConfig& pinConfig = _config->getPinConfig(pin);
-            JsonDocument doc;
-            doc["pin"] = pinConfig.pin;
-            doc["type"] = ConfigManager::typeToString(pinConfig.type);
-            doc["name"] = pinConfig.name;
-            doc["inverted"] = pinConfig.inverted;
-            doc["cooldown"] = pinConfig.cooldown;
-            doc["valveType"] = pinConfig.valveType;
-
-            String output;
-            serializeJson(doc, output);
-            sendJson(request, 200, output);
-        });
-
-        // API: Update single pin config
-        _server.on("^\\/api\\/pins\\/(\\d+)$", HTTP_PUT,
-            [](AsyncWebServerRequest *request) {},
-            NULL,
-            [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-                handlePutPin(request, data, len, index, total);
+            String body = _server.arg("plain");
+            if (_config->fromJson(body)) {
+                if (_config->save()) {
+                    _server.send(200, "application/json", "{\"success\":true,\"message\":\"Config saved. Restart to apply.\"}");
+                } else {
+                    sendError(500, "Failed to save config");
+                }
+            } else {
+                sendError(400, "Invalid JSON");
             }
-        );
+        });
 
         // API: Get system info
-        _server.on("/api/system/info", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        _server.on("/api/system/info", HTTP_GET, [this]() {
             JsonDocument doc;
             doc["ip"] = WiFi.localIP().toString();
             doc["mac"] = WiFi.macAddress();
@@ -210,21 +252,22 @@ private:
             doc["mcpConnected"] = _mcp ? _mcp->isConnected() : false;
             doc["mcpAddress"] = _mcp ? String("0x") + String(_mcp->getAddress(), HEX) : "N/A";
             doc["accessoryCount"] = _config ? _config->countAccessories() : 0;
+            doc["wsPort"] = 81;
 
             String output;
             serializeJson(doc, output);
-            sendJson(request, 200, output);
+            _server.send(200, "application/json", output);
         });
 
         // API: Restart device
-        _server.on("/api/system/restart", HTTP_POST, [](AsyncWebServerRequest *request) {
-            request->send(200, "application/json", "{\"success\":true,\"message\":\"Restarting...\"}");
+        _server.on("/api/system/restart", HTTP_POST, [this]() {
+            _server.send(200, "application/json", "{\"success\":true,\"message\":\"Restarting...\"}");
             delay(500);
             ESP.restart();
         });
 
         // API: Get available pin types
-        _server.on("/api/pin-types", HTTP_GET, [](AsyncWebServerRequest *request) {
+        _server.on("/api/pin-types", HTTP_GET, [this]() {
             JsonDocument doc;
             JsonArray types = doc.to<JsonArray>();
 
@@ -260,13 +303,13 @@ private:
 
             String output;
             serializeJson(doc, output);
-            request->send(200, "application/json", output);
+            _server.send(200, "application/json", output);
         });
 
-        // API: Get current pin states (for debugging)
-        _server.on("/api/pins/state", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        // API: Get current pin states
+        _server.on("/api/pins/state", HTTP_GET, [this]() {
             if (!_mcp) {
-                sendError(request, 500, "MCP23017 not initialized");
+                sendError(500, "MCP23017 not initialized");
                 return;
             }
 
@@ -282,124 +325,32 @@ private:
 
             String output;
             serializeJson(doc, output);
-            sendJson(request, 200, output);
+            _server.send(200, "application/json", output);
         });
 
         // Handle 404
-        _server.onNotFound([](AsyncWebServerRequest *request) {
-            request->send(404, "application/json", "{\"error\":\"Not found\"}");
+        _server.onNotFound([this]() {
+            _server.send(404, "application/json", "{\"error\":\"Not found\"}");
         });
-
-        // Enable CORS for development
-        DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
-        DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type");
     }
 
-    void handlePutConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-        static String body;
-
-        if (index == 0) {
-            body = "";
-        }
-
-        body += String((char*)data).substring(0, len);
-
-        if (index + len == total) {
-            if (!_config) {
-                sendError(request, 500, "Config not initialized");
-                return;
-            }
-
-            if (_config->fromJson(body)) {
-                if (_config->save()) {
-                    sendJson(request, 200, "{\"success\":true,\"message\":\"Config saved. Restart to apply.\"}");
-                } else {
-                    sendError(request, 500, "Failed to save config");
-                }
-            } else {
-                sendError(request, 400, "Invalid JSON");
-            }
+    void serveFile(const char* path, const char* contentType) {
+        if (LittleFS.exists(path)) {
+            File file = LittleFS.open(path, "r");
+            _server.streamFile(file, contentType);
+            file.close();
+        } else {
+            _server.send(404, "text/plain", "File not found");
         }
     }
 
-    void handlePutPin(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-        static String body;
-
-        if (index == 0) {
-            body = "";
-        }
-
-        body += String((char*)data).substring(0, len);
-
-        if (index + len == total) {
-            int pin = request->pathArg(0).toInt();
-            if (pin < 0 || pin >= NUM_PINS) {
-                sendError(request, 400, "Invalid pin number");
-                return;
-            }
-
-            JsonDocument doc;
-            DeserializationError error = deserializeJson(doc, body);
-
-            if (error) {
-                sendError(request, 400, "Invalid JSON");
-                return;
-            }
-
-            PinConfig pinConfig;
-            pinConfig.pin = pin;
-            pinConfig.type = ConfigManager::stringToType(doc["type"] | "unused");
-            pinConfig.name = doc["name"] | "";
-            pinConfig.inverted = doc["inverted"] | true;  // Default active LOW
-            pinConfig.cooldown = doc["cooldown"] | 0;
-            pinConfig.valveType = doc["valveType"] | 0;
-
-            if (_config->setPinConfig(pin, pinConfig)) {
-                if (_config->save()) {
-                    sendJson(request, 200, "{\"success\":true,\"message\":\"Pin config saved. Restart to apply.\"}");
-                } else {
-                    sendError(request, 500, "Failed to save config");
-                }
-            } else {
-                sendError(request, 500, "Failed to update pin config");
-            }
-        }
-    }
-
-    void sendJson(AsyncWebServerRequest *request, int code, const String& json) {
-        request->send(code, "application/json", json);
-    }
-
-    void sendError(AsyncWebServerRequest *request, int code, const char* message) {
+    void sendError(int code, const char* message) {
         JsonDocument doc;
         doc["error"] = message;
         String output;
         serializeJson(doc, output);
-        request->send(code, "application/json", output);
+        _server.send(code, "application/json", output);
     }
 };
-
-// TeeSerial implementation
-inline size_t TeeSerial::write(uint8_t c) {
-    Serial.write(c);
-    if (_webServer) {
-        _webServer->writeToBuffer((char)c);
-    }
-    return 1;
-}
-
-inline size_t TeeSerial::write(const uint8_t *buffer, size_t size) {
-    Serial.write(buffer, size);
-    if (_webServer) {
-        for (size_t i = 0; i < size; i++) {
-            _webServer->writeToBuffer((char)buffer[i]);
-        }
-    }
-    return size;
-}
-
-// Global TeeSerial instance definition
-TeeSerial teeSerial;
 
 #endif // WEB_CONFIG_SERVER_H
