@@ -23,7 +23,7 @@
 
 // Pin assignments for ESP32-C6 (WT0132C6-S5)
 #define STATUS_LED_PIN    8
-#define CONTROL_BTN_PIN   4
+#define CONTROL_BTN_PIN   9
 #define SERIAL_RX_PIN     17   // USB/Debug Serial RX
 #define SERIAL_TX_PIN     16   // USB/Debug Serial TX
 #define PCCWD_RX_PIN      0   // PCCWD Bus RX (Serial1)
@@ -49,7 +49,6 @@ MCP23017Handler mcpHandler(MCP23017_ADDR);
 ConfigManager configManager;
 PinAccessoryFactory pinFactory;
 WebConfigServer* webServer = nullptr;
-bool webServerStarted = false;
 
 // Sensor polling interval
 const unsigned long SENSOR_POLL_INTERVAL = 100;  // 100ms
@@ -64,10 +63,16 @@ unsigned long lastSensorPoll = 0;
 #define AID_MCP_BASE    21   // 21-36 (16 pins)
 #define AID_SECURITY    37
 
+void setupWeb(){
+  webServer = new WebConfigServer();
+   webServer->begin(configManager, mcpHandler);
+  LOG_D("Web config server started at http://%s/\n", WiFi.localIP().toString().c_str());
+}
+
+
 void setup() {
   // Use Serial0 (UART0) on GPIO6/7 for external USB-serial adapter
   Serial.begin(115200, SERIAL_8N1, SERIAL_RX_PIN, SERIAL_TX_PIN);
-  delay(1000);  // Wait for serial
   Serial.println("\n\n=== PCCWD Bridge Starting ===");
 
   // Initialize PCCWD serial
@@ -100,15 +105,18 @@ void setup() {
   homeSpan.setStatusPin(STATUS_LED_PIN);
   homeSpan.setControlPin(CONTROL_BTN_PIN);
   homeSpan.setApSSID("PCCWDSETUP");
+  homeSpan.setLogLevel(1);
   homeSpan.setApPassword("");
   homeSpan.enableAutoStartAP();
-  homeSpan.setPortNum(8080);
+  homeSpan.setPortNum(8080);  // Move HomeSpan off port 80 for web server
+  homeSpan.setWifiCallback(setupWeb);     // need to start Web Server after WiFi is established 
+  
   homeSpan.begin(Category::Bridges, "PCCWD", "PCCWD", "PCCWD Bridge");
 
   // Create bridge accessory (fixed ID 1)
   char serialNum[16];
-  new SpanAccessory(AID_BRIDGE);
   snprintf(serialNum, sizeof(serialNum), "AID-%03d", AID_BRIDGE);
+  new SpanAccessory(AID_BRIDGE);
   new DEV_Identify("PCCWD", "MORDOMUS", serialNum, "PCCWD", "0.2", 3);
 
   // ============================================
@@ -190,10 +198,6 @@ void setup() {
     pinFactory.createSecuritySystem(configManager, mcpHandler, AID_SECURITY);
   }
 
-  // Web server will be started in loop() after WiFi connects
-  // to avoid port 80 conflict with HomeSpan's AP setup portal
-  webServer = new WebConfigServer();
-
   Serial.println("=== Setup Complete ===\n");
 
 } // end of setup()
@@ -207,15 +211,9 @@ void loop() {
   // PCCWD bus polling
   pccwdController.loop();
 
-  // Start web server once WiFi is connected (avoid port 80 conflict with HomeSpan AP)
-  if (!webServerStarted && WiFi.status() == WL_CONNECTED && webServer) {
-    webServer->begin(configManager, mcpHandler);
-    webServerStarted = true;
-    Serial.printf("Web config server started at http://%s/\n", WiFi.localIP().toString().c_str());
-  }
-
-  // Web server polling (only after started)
-  if (webServerStarted && webServer) webServer->loop();
+  // Web server polling
+  
+  if (webServer) webServer->loop();
 
   // MCP23017 sensor polling (at reduced rate)
   unsigned long now = millis();
