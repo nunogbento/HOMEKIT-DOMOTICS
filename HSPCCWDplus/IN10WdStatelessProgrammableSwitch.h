@@ -8,9 +8,9 @@ struct IN10wDStatelessProgrammableSwitch : Service::StatelessProgrammableSwitch 
   IN10wDStatelessProgrammableSwitch(byte address) : Service::StatelessProgrammableSwitch() {
 
     switchEvent = new Characteristic::ProgrammableSwitchEvent(); // Programmable Switch Event Characteristic (will be set to SINGLE, DOUBLE or LONG press)
-    new Characteristic::ServiceLabelIndex(address);               // set service label index (only required if there is more than one Stateless Programmable Switch per Service)
+    // Note: ServiceLabelIndex removed - only needed for multiple switches per accessory
 
-
+    
 
   } // end constructor
 

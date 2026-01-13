@@ -6,7 +6,8 @@ const state = {
     selectedPin: null,
     dirty: false,
     ws: null,
-    wsConnected: false
+    wsConnected: false,
+    currentTab: 'gpio'
 };
 
 // Type abbreviations for display
@@ -205,6 +206,202 @@ function createDeviceItem(type, index, device) {
     return el;
 }
 
+// Tab switching
+function switchTab(tabId) {
+    state.currentTab = tabId;
+
+    // Update tab buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabId);
+    });
+
+    // Update tab panes
+    document.querySelectorAll('.tab-pane').forEach(pane => {
+        pane.classList.toggle('active', pane.id === `tab-${tabId}`);
+    });
+
+    // Show/hide main actions (hide on terminal tab)
+    const actions = document.getElementById('main-actions');
+    if (actions) {
+        actions.classList.toggle('hidden', tabId === 'terminal');
+    }
+}
+
+// Security System UI
+function renderSecuritySystem() {
+    if (!state.config) return;
+
+    // Initialize security config if not present
+    if (!state.config.securitySystem) {
+        state.config.securitySystem = {
+            enabled: false,
+            name: 'Security System',
+            sirenPin: 255,
+            entryDelaySeconds: 30,
+            exitDelaySeconds: 60,
+            triggers: []
+        };
+    }
+
+    const sec = state.config.securitySystem;
+
+    // Set form values
+    document.getElementById('security-enabled').checked = sec.enabled;
+    document.getElementById('security-name').value = sec.name || 'Security System';
+    document.getElementById('security-entry-delay').value = sec.entryDelaySeconds || 30;
+    document.getElementById('security-exit-delay').value = sec.exitDelaySeconds || 60;
+
+    // Populate siren pin dropdown
+    const sirenSelect = document.getElementById('security-siren');
+    sirenSelect.innerHTML = '<option value="255">Disabled</option>';
+    for (let i = 0; i < 16; i++) {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = `Pin ${i}`;
+        sirenSelect.appendChild(opt);
+    }
+    sirenSelect.value = sec.sirenPin !== undefined ? sec.sirenPin : 255;
+
+    // Show/hide config section based on enabled state
+    updateSecurityConfigVisibility();
+
+    // Render trigger table
+    renderSecurityTriggers();
+}
+
+function updateSecurityConfigVisibility() {
+    const enabled = document.getElementById('security-enabled').checked;
+    const configDiv = document.getElementById('security-config');
+    configDiv.style.opacity = enabled ? '1' : '0.5';
+    configDiv.style.pointerEvents = enabled ? 'auto' : 'none';
+}
+
+function renderSecurityTriggers() {
+    const tbody = document.getElementById('security-triggers');
+    const noSensorsMsg = document.getElementById('no-sensors-msg');
+    const triggerTable = document.getElementById('trigger-table');
+
+    tbody.innerHTML = '';
+
+    if (!state.config || !state.config.pins) {
+        noSensorsMsg.classList.remove('hidden');
+        triggerTable.classList.add('hidden');
+        return;
+    }
+
+    // Get all configured input sensors
+    const inputSensors = state.config.pins.filter(pin =>
+        ['motion', 'leak', 'smoke', 'co2'].includes(pin.type)
+    );
+
+    if (inputSensors.length === 0) {
+        noSensorsMsg.classList.remove('hidden');
+        triggerTable.classList.add('hidden');
+        return;
+    }
+
+    noSensorsMsg.classList.add('hidden');
+    triggerTable.classList.remove('hidden');
+
+    // Build existing triggers lookup
+    const existingTriggers = {};
+    if (state.config.securitySystem && state.config.securitySystem.triggers) {
+        state.config.securitySystem.triggers.forEach(t => {
+            existingTriggers[t.pin] = t;
+        });
+    }
+
+    // Render each sensor as a row
+    inputSensors.forEach(pin => {
+        const existing = existingTriggers[pin.pin] || {
+            pin: pin.pin,
+            triggerHome: false,
+            triggerAway: true,
+            triggerNight: true,
+            isEntryPoint: false
+        };
+
+        const row = document.createElement('tr');
+        row.dataset.pin = pin.pin;
+
+        // Sensor name cell
+        const nameCell = document.createElement('td');
+        nameCell.textContent = pin.name || `Pin ${pin.pin} (${pin.type})`;
+        row.appendChild(nameCell);
+
+        // Home checkbox
+        row.appendChild(createTriggerCheckbox('home', pin.pin, existing.triggerHome));
+
+        // Away checkbox
+        row.appendChild(createTriggerCheckbox('away', pin.pin, existing.triggerAway));
+
+        // Night checkbox
+        row.appendChild(createTriggerCheckbox('night', pin.pin, existing.triggerNight));
+
+        // Entry point checkbox
+        row.appendChild(createTriggerCheckbox('entry', pin.pin, existing.isEntryPoint));
+
+        tbody.appendChild(row);
+    });
+}
+
+function createTriggerCheckbox(mode, pin, checked) {
+    const td = document.createElement('td');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = checked;
+    checkbox.dataset.pin = pin;
+    checkbox.dataset.mode = mode;
+    checkbox.addEventListener('change', () => {
+        updateSecurityTriggers();
+        updateDirtyState();
+    });
+    td.appendChild(checkbox);
+    return td;
+}
+
+function collectSecurityConfig() {
+    const enabled = document.getElementById('security-enabled').checked;
+    const name = document.getElementById('security-name').value || 'Security System';
+    const sirenPin = parseInt(document.getElementById('security-siren').value) || 255;
+    const entryDelay = parseInt(document.getElementById('security-entry-delay').value) || 30;
+    const exitDelay = parseInt(document.getElementById('security-exit-delay').value) || 60;
+
+    // Collect triggers from table
+    const triggers = [];
+    const rows = document.querySelectorAll('#security-triggers tr');
+    rows.forEach(row => {
+        const pin = parseInt(row.dataset.pin);
+        if (isNaN(pin)) return;
+
+        const homeCheckbox = row.querySelector('input[data-mode="home"]');
+        const awayCheckbox = row.querySelector('input[data-mode="away"]');
+        const nightCheckbox = row.querySelector('input[data-mode="night"]');
+        const entryCheckbox = row.querySelector('input[data-mode="entry"]');
+
+        triggers.push({
+            pin: pin,
+            triggerHome: homeCheckbox ? homeCheckbox.checked : false,
+            triggerAway: awayCheckbox ? awayCheckbox.checked : true,
+            triggerNight: nightCheckbox ? nightCheckbox.checked : true,
+            isEntryPoint: entryCheckbox ? entryCheckbox.checked : false
+        });
+    });
+
+    return {
+        enabled,
+        name,
+        sirenPin,
+        entryDelaySeconds: entryDelay,
+        exitDelaySeconds: exitDelay,
+        triggers
+    };
+}
+
+function updateSecurityTriggers() {
+    state.config.securitySystem = collectSecurityConfig();
+}
+
 function updateSystemInfo(info) {
     if (!info) return;
 
@@ -276,6 +473,7 @@ function applyPinConfig() {
     pin.valveType = parseInt(document.getElementById('valve-type').value) || 0;
 
     renderPinGrid();
+    renderSecurityTriggers();  // Refresh security triggers when pins change
     updateDirtyState();
     closeModal();
 }
@@ -283,6 +481,59 @@ function applyPinConfig() {
 // Error handling
 function showError(message) {
     alert(message); // Simple error display, could be improved
+}
+
+// Export/Import functions
+function exportConfig() {
+    if (!state.config) {
+        showError('No configuration loaded');
+        return;
+    }
+
+    const configJson = JSON.stringify(state.config, null, 2);
+    const blob = new Blob([configJson], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pccwd-config-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function importConfig(file) {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+        try {
+            const imported = JSON.parse(e.target.result);
+
+            // Validate basic structure
+            if (!imported.pins || !Array.isArray(imported.pins)) {
+                throw new Error('Invalid config: missing pins array');
+            }
+
+            // Apply imported config
+            state.config = imported;
+            renderPinGrid();
+            renderHardcodedDevices();
+            renderSecuritySystem();
+            updateDirtyState();
+
+            alert('Configuration imported. Click "Save & Restart" to apply.');
+        } catch (error) {
+            console.error('Import error:', error);
+            showError('Failed to import: ' + error.message);
+        }
+    };
+
+    reader.onerror = () => {
+        showError('Failed to read file');
+    };
+
+    reader.readAsText(file);
 }
 
 // Event handlers
@@ -293,6 +544,7 @@ async function handleRefresh() {
         state.originalConfig = JSON.parse(JSON.stringify(config));
         renderPinGrid();
         renderHardcodedDevices();
+        renderSecuritySystem();
         updateDirtyState();
     }
 
@@ -390,9 +642,26 @@ function handleTerminalInput(e) {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
+    // Set up tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            switchTab(btn.dataset.tab);
+        });
+    });
+
     // Set up event listeners
     document.getElementById('btn-refresh').addEventListener('click', handleRefresh);
     document.getElementById('btn-save').addEventListener('click', handleSave);
+    document.getElementById('btn-export').addEventListener('click', exportConfig);
+    document.getElementById('btn-import').addEventListener('click', () => {
+        document.getElementById('import-file').click();
+    });
+    document.getElementById('import-file').addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            importConfig(e.target.files[0]);
+            e.target.value = ''; // Reset for next import
+        }
+    });
     document.getElementById('modal-close').addEventListener('click', closeModal);
     document.getElementById('btn-cancel').addEventListener('click', closeModal);
     document.getElementById('btn-apply').addEventListener('click', applyPinConfig);
@@ -440,6 +709,33 @@ document.addEventListener('DOMContentLoaded', async () => {
             state.config.pccwdBus = { of8wdAddress: 167, in10wdAddress: 75 };
         }
         state.config.pccwdBus.in10wdAddress = parseInt(e.target.value) || 75;
+        updateDirtyState();
+    });
+
+    // Security system event listeners
+    document.getElementById('security-enabled').addEventListener('change', () => {
+        updateSecurityConfigVisibility();
+        updateSecurityTriggers();
+        updateDirtyState();
+    });
+
+    document.getElementById('security-name').addEventListener('input', () => {
+        updateSecurityTriggers();
+        updateDirtyState();
+    });
+
+    document.getElementById('security-siren').addEventListener('change', () => {
+        updateSecurityTriggers();
+        updateDirtyState();
+    });
+
+    document.getElementById('security-entry-delay').addEventListener('change', () => {
+        updateSecurityTriggers();
+        updateDirtyState();
+    });
+
+    document.getElementById('security-exit-delay').addEventListener('change', () => {
+        updateSecurityTriggers();
         updateDirtyState();
     });
 

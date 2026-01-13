@@ -54,10 +54,54 @@ header h1 {
     color: #e74c3c;
 }
 
+/* Tab Navigation */
+.tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 0;
+    background: white;
+    border-radius: 8px 8px 0 0;
+    padding: 0.5rem 0.5rem 0;
+    box-shadow: 0 -2px 4px rgba(0,0,0,0.05);
+}
+
+.tab-btn {
+    padding: 0.75rem 1.25rem;
+    border: none;
+    background: #ecf0f1;
+    color: #7f8c8d;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.tab-btn:hover {
+    background: #e0e0e0;
+    color: #2c3e50;
+}
+
+.tab-btn.active {
+    background: white;
+    color: #2c3e50;
+    border-bottom: 2px solid white;
+    margin-bottom: -1px;
+}
+
+/* Tab Panes */
+.tab-pane {
+    display: none;
+}
+
+.tab-pane.active {
+    display: block;
+}
+
 /* Main content */
 main {
     background: white;
-    border-radius: 8px;
+    border-radius: 0 0 8px 8px;
     padding: 1rem;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
@@ -195,10 +239,21 @@ h3 {
 /* Actions */
 .actions {
     display: flex;
-    gap: 1rem;
-    align-items: center;
+    flex-direction: column;
+    gap: 0.75rem;
     padding-top: 1rem;
     border-top: 1px solid #ecf0f1;
+}
+
+.action-row {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.action-row-secondary {
+    padding-top: 0.5rem;
+    border-top: 1px dashed #ecf0f1;
 }
 
 .btn {
@@ -559,4 +614,141 @@ h3 {
 
 .terminal-status.disconnected {
     color: #e74c3c;
+}
+
+/* Security Section */
+.security-section {
+    padding: 0;
+}
+
+.security-config {
+    margin-top: 1rem;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-weight: 500;
+    color: #2c3e50;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin-right: 0.75rem;
+    cursor: pointer;
+}
+
+.checkbox-label span {
+    font-size: 1rem;
+}
+
+.form-row {
+    display: flex;
+    gap: 1rem;
+}
+
+.form-row .form-group {
+    flex: 1;
+}
+
+.form-group input[type="number"] {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #bdc3c7;
+    border-radius: 6px;
+    font-size: 1rem;
+}
+
+.form-group input[type="number"]:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+.section-hint {
+    font-size: 0.85rem;
+    color: #7f8c8d;
+    margin-bottom: 1rem;
+}
+
+/* Trigger Table */
+.trigger-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.5rem;
+}
+
+.trigger-table th,
+.trigger-table td {
+    padding: 0.75rem 0.5rem;
+    text-align: center;
+    border-bottom: 1px solid #ecf0f1;
+}
+
+.trigger-table th {
+    background: #f8f9fa;
+    font-weight: 500;
+    color: #2c3e50;
+    font-size: 0.85rem;
+}
+
+.trigger-table th:first-child,
+.trigger-table td:first-child {
+    text-align: left;
+    padding-left: 0.75rem;
+}
+
+.trigger-table td:first-child {
+    font-weight: 500;
+}
+
+.trigger-table input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.trigger-table tr:hover {
+    background: #f8f9fa;
+}
+
+.no-sensors {
+    color: #7f8c8d;
+    font-style: italic;
+    padding: 1rem;
+    text-align: center;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+/* Responsive adjustments for tabs */
+@media (max-width: 500px) {
+    .tabs {
+        flex-wrap: wrap;
+    }
+
+    .tab-btn {
+        flex: 1;
+        min-width: 45%;
+        padding: 0.6rem 0.75rem;
+        font-size: 0.8rem;
+    }
+
+    .form-row {
+        flex-direction: column;
+        gap: 0;
+    }
+
+    .trigger-table th,
+    .trigger-table td {
+        padding: 0.5rem 0.25rem;
+        font-size: 0.8rem;
+    }
+
+    .trigger-table input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+    }
 }

@@ -7,7 +7,7 @@ SKETCH="$SCRIPT_DIR/HSPCCWDplus.ino"
 
 # Board configuration
 # CDCOnBoot=cdc enables USB Serial output on ESP32-C6
-FQBN="esp32:esp32:esp32c6:PartitionScheme=min_spiffs,FlashSize=4M,CDCOnBoot=cdc"
+FQBN="esp32:esp32:esp32c6:PartitionScheme=min_spiffs,FlashSize=4M"
 
 # Colors
 RED='\033[0;31m'

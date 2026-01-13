@@ -28,20 +28,24 @@ struct CarbonDioxideSensorAccessory : Service::CarbonDioxideSensor {
         bool detected = _inverted ? !rawPinState : rawPinState;
         unsigned long now = millis();
 
-        // If detection and cooldown is active, check if we're still in cooldown
-        if (detected && _cooldownMs > 0) {
+        // If cooldown is enabled
+        if (_cooldownMs > 0) {
             if (_inCooldown) {
                 // Check if cooldown has expired
                 if (now - _lastTriggerTime >= _cooldownMs) {
                     _inCooldown = false;
+                    // Cooldown expired, now follow actual sensor state
                 } else {
-                    // Still in cooldown, ignore this trigger
+                    // Still in cooldown - keep sensor active, ignore state changes
                     return;
                 }
             }
-            // Start new cooldown period
-            _lastTriggerTime = now;
-            _inCooldown = true;
+
+            // New detection starts cooldown
+            if (detected && !_inCooldown) {
+                _lastTriggerTime = now;
+                _inCooldown = true;
+            }
         }
 
         // Update HomeKit if state changed

@@ -6,8 +6,9 @@
 #include <LittleFS.h>
 
 #define CONFIG_FILE "/config.json"
-#define CONFIG_VERSION 3
+#define CONFIG_VERSION 4
 #define NUM_PINS 16
+#define MAX_SECURITY_TRIGGERS 16
 #define NUM_OF8WD 8
 #define NUM_IN10WD 10
 
@@ -53,6 +54,33 @@ struct HardcodedDeviceConfig {
 
     HardcodedDeviceConfig() : enabled(false), name("") {}
     HardcodedDeviceConfig(bool en, const String& n) : enabled(en), name(n) {}
+};
+
+// Security system sensor trigger configuration
+struct SecuritySensorTrigger {
+    uint8_t pin;           // MCP23017 pin (0-15)
+    bool triggerHome;      // Trigger alarm in Stay/Home mode
+    bool triggerAway;      // Trigger alarm in Away mode
+    bool triggerNight;     // Trigger alarm in Night mode
+    bool isEntryPoint;     // Has entry delay (vs immediate trigger)
+
+    SecuritySensorTrigger() : pin(0), triggerHome(false), triggerAway(true),
+                              triggerNight(true), isEntryPoint(false) {}
+};
+
+// Security system configuration
+struct SecuritySystemConfig {
+    bool enabled;
+    String name;
+    uint8_t sirenPin;              // 0xFF = disabled, 0-15 = MCP pin for siren output
+    uint16_t entryDelaySeconds;    // Delay before alarm triggers (0-300)
+    uint16_t exitDelaySeconds;     // Delay before system arms (0-300)
+    SecuritySensorTrigger triggers[MAX_SECURITY_TRIGGERS];
+    uint8_t triggerCount;
+
+    SecuritySystemConfig() : enabled(false), name("Security System"),
+                             sirenPin(0xFF), entryDelaySeconds(30),
+                             exitDelaySeconds(60), triggerCount(0) {}
 };
 
 class ConfigManager {
@@ -180,6 +208,32 @@ public:
             _of8wdAddress = busObj["of8wdAddress"] | DEFAULT_OF8WD_ADDRESS;
         }
 
+        // Parse security system configuration
+        if (doc.containsKey("securitySystem")) {
+            JsonObject secObj = doc["securitySystem"];
+            _securitySystem.enabled = secObj["enabled"] | false;
+            _securitySystem.name = secObj["name"] | "Security System";
+            _securitySystem.sirenPin = secObj["sirenPin"] | 0xFF;
+            _securitySystem.entryDelaySeconds = secObj["entryDelaySeconds"] | 30;
+            _securitySystem.exitDelaySeconds = secObj["exitDelaySeconds"] | 60;
+
+            // Parse triggers
+            _securitySystem.triggerCount = 0;
+            if (secObj.containsKey("triggers")) {
+                JsonArray triggersArr = secObj["triggers"].as<JsonArray>();
+                for (JsonObject trigObj : triggersArr) {
+                    if (_securitySystem.triggerCount >= MAX_SECURITY_TRIGGERS) break;
+                    SecuritySensorTrigger& trig = _securitySystem.triggers[_securitySystem.triggerCount];
+                    trig.pin = trigObj["pin"] | 0;
+                    trig.triggerHome = trigObj["triggerHome"] | false;
+                    trig.triggerAway = trigObj["triggerAway"] | true;
+                    trig.triggerNight = trigObj["triggerNight"] | true;
+                    trig.isEntryPoint = trigObj["isEntryPoint"] | false;
+                    _securitySystem.triggerCount++;
+                }
+            }
+        }
+
         _loaded = true;
         Serial.println("Config loaded successfully");
         return true;
@@ -235,6 +289,24 @@ public:
         JsonObject busObj = doc["pccwdBus"].to<JsonObject>();
         busObj["in10wdAddress"] = _in10wdAddress;
         busObj["of8wdAddress"] = _of8wdAddress;
+
+        // Save security system configuration
+        JsonObject secObj = doc["securitySystem"].to<JsonObject>();
+        secObj["enabled"] = _securitySystem.enabled;
+        secObj["name"] = _securitySystem.name;
+        secObj["sirenPin"] = _securitySystem.sirenPin;
+        secObj["entryDelaySeconds"] = _securitySystem.entryDelaySeconds;
+        secObj["exitDelaySeconds"] = _securitySystem.exitDelaySeconds;
+
+        JsonArray triggersArr = secObj["triggers"].to<JsonArray>();
+        for (int i = 0; i < _securitySystem.triggerCount; i++) {
+            JsonObject trigObj = triggersArr.add<JsonObject>();
+            trigObj["pin"] = _securitySystem.triggers[i].pin;
+            trigObj["triggerHome"] = _securitySystem.triggers[i].triggerHome;
+            trigObj["triggerAway"] = _securitySystem.triggers[i].triggerAway;
+            trigObj["triggerNight"] = _securitySystem.triggers[i].triggerNight;
+            trigObj["isEntryPoint"] = _securitySystem.triggers[i].isEntryPoint;
+        }
 
         if (serializeJson(doc, file) == 0) {
             file.close();
@@ -318,6 +390,24 @@ public:
         busObj["in10wdAddress"] = _in10wdAddress;
         busObj["of8wdAddress"] = _of8wdAddress;
 
+        // Include security system configuration
+        JsonObject secObj = doc["securitySystem"].to<JsonObject>();
+        secObj["enabled"] = _securitySystem.enabled;
+        secObj["name"] = _securitySystem.name;
+        secObj["sirenPin"] = _securitySystem.sirenPin;
+        secObj["entryDelaySeconds"] = _securitySystem.entryDelaySeconds;
+        secObj["exitDelaySeconds"] = _securitySystem.exitDelaySeconds;
+
+        JsonArray triggersArr = secObj["triggers"].to<JsonArray>();
+        for (int i = 0; i < _securitySystem.triggerCount; i++) {
+            JsonObject trigObj = triggersArr.add<JsonObject>();
+            trigObj["pin"] = _securitySystem.triggers[i].pin;
+            trigObj["triggerHome"] = _securitySystem.triggers[i].triggerHome;
+            trigObj["triggerAway"] = _securitySystem.triggers[i].triggerAway;
+            trigObj["triggerNight"] = _securitySystem.triggers[i].triggerNight;
+            trigObj["isEntryPoint"] = _securitySystem.triggers[i].isEntryPoint;
+        }
+
         String output;
         serializeJson(doc, output);
         return output;
@@ -382,6 +472,32 @@ public:
             JsonObject busObj = doc["pccwdBus"];
             _in10wdAddress = busObj["in10wdAddress"] | DEFAULT_IN10WD_ADDRESS;
             _of8wdAddress = busObj["of8wdAddress"] | DEFAULT_OF8WD_ADDRESS;
+        }
+
+        // Parse security system configuration
+        if (doc.containsKey("securitySystem")) {
+            JsonObject secObj = doc["securitySystem"];
+            _securitySystem.enabled = secObj["enabled"] | false;
+            _securitySystem.name = secObj["name"] | "Security System";
+            _securitySystem.sirenPin = secObj["sirenPin"] | 0xFF;
+            _securitySystem.entryDelaySeconds = secObj["entryDelaySeconds"] | 30;
+            _securitySystem.exitDelaySeconds = secObj["exitDelaySeconds"] | 60;
+
+            // Parse triggers
+            _securitySystem.triggerCount = 0;
+            if (secObj.containsKey("triggers")) {
+                JsonArray triggersArr = secObj["triggers"].as<JsonArray>();
+                for (JsonObject trigObj : triggersArr) {
+                    if (_securitySystem.triggerCount >= MAX_SECURITY_TRIGGERS) break;
+                    SecuritySensorTrigger& trig = _securitySystem.triggers[_securitySystem.triggerCount];
+                    trig.pin = trigObj["pin"] | 0;
+                    trig.triggerHome = trigObj["triggerHome"] | false;
+                    trig.triggerAway = trigObj["triggerAway"] | true;
+                    trig.triggerNight = trigObj["triggerNight"] | true;
+                    trig.isEntryPoint = trigObj["isEntryPoint"] | false;
+                    _securitySystem.triggerCount++;
+                }
+            }
         }
 
         return true;
@@ -449,6 +565,15 @@ public:
         return _of8wdAddress;
     }
 
+    // Security system getters
+    const SecuritySystemConfig& getSecuritySystemConfig() const {
+        return _securitySystem;
+    }
+
+    bool isSecuritySystemEnabled() const {
+        return _securitySystem.enabled;
+    }
+
     // Convert type to string
     static const char* typeToString(PinType type) {
         switch (type) {
@@ -476,6 +601,7 @@ private:
     HardcodedDeviceConfig _of8wd[NUM_OF8WD];
     HardcodedDeviceConfig _in10wd[NUM_IN10WD];
     HardcodedDeviceConfig _pwmLed;
+    SecuritySystemConfig _securitySystem;
     uint8_t _in10wdAddress;
     uint8_t _of8wdAddress;
     bool _loaded;

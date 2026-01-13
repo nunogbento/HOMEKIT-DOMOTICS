@@ -5,16 +5,17 @@
 #include "HomeSpan.h"
 #include "ConfigManager.h"
 #include "MCP23017Handler.h"
-#include "DEV_Identify.h"
 #include "MotionSensor.h"
 #include "LeakSensor.h"
 #include "SmokeSensor.h"
 #include "CarbonDioxide.h"
 #include "Valve.h"
+#include "SecuritySystem.h"
+#include "SimpleAccessoryInfo.h"
 
 class PinAccessoryFactory {
 public:
-    PinAccessoryFactory() : _mcp(nullptr) {
+    PinAccessoryFactory() : _mcp(nullptr), _securitySystem(nullptr) {
         for (int i = 0; i < NUM_PINS; i++) {
             _motionSensors[i] = nullptr;
             _leakSensors[i] = nullptr;
@@ -25,7 +26,8 @@ public:
     }
 
     // Create all accessories based on configuration
-    void createAccessories(ConfigManager& config, MCP23017Handler& mcp) {
+    // baseId: fixed base ID for MCP pins (e.g., 21), actual ID = baseId + pin
+    void createAccessories(ConfigManager& config, MCP23017Handler& mcp, uint32_t baseId) {
         _mcp = &mcp;
 
         const PinConfig* pins = config.getAllPins();
@@ -41,15 +43,17 @@ public:
             bool isOutput = pinConfig.isOutput();
             mcp.pinMode(i, isOutput, !isOutput);  // pullup only for inputs
 
-            // Create HomeSpan accessory
-            new SpanAccessory();
-            new DEV_Identify(
+            // Create HomeSpan accessory with unique serial and fixed ID per pin
+            char serialNum[16];
+            uint32_t aid = baseId + i;
+            snprintf(serialNum, sizeof(serialNum), "AID-%03d", aid);
+            new SpanAccessory(aid);
+            new SimpleAccessoryInfo(
                 pinConfig.name.c_str(),
                 "MORDOMUS",
-                "000000",
+                serialNum,
                 getAccessoryModel(pinConfig.type),
-                "0.1",
-                0
+                "0.1"
             );
 
             switch (pinConfig.type) {
@@ -84,6 +88,37 @@ public:
         }
     }
 
+    // Create SecuritySystem accessory if enabled in config
+    // fixedId: fixed ID for SecuritySystem (e.g., 37)
+    void createSecuritySystem(ConfigManager& config, MCP23017Handler& mcp, uint32_t fixedId) {
+        if (!config.isSecuritySystemEnabled()) {
+            Serial.println("SecuritySystem disabled in config");
+            return;
+        }
+
+        _mcp = &mcp;
+        const SecuritySystemConfig& secConfig = config.getSecuritySystemConfig();
+
+        // Create HomeSpan accessory for SecuritySystem with fixed ID
+        char serialNum[16];
+        snprintf(serialNum, sizeof(serialNum), "AID-%03d", fixedId);
+        new SpanAccessory(fixedId);
+        new SimpleAccessoryInfo(
+            secConfig.name.c_str(),
+            "MORDOMUS",
+            serialNum,
+            "Security System",
+            "0.1"
+        );
+
+        _securitySystem = new SecuritySystemService(&mcp, &secConfig);
+        Serial.printf("SecuritySystem created: %s (siren pin: %s, entry: %ds, exit: %ds)\n",
+            secConfig.name.c_str(),
+            secConfig.sirenPin == 0xFF ? "disabled" : String(secConfig.sirenPin).c_str(),
+            secConfig.entryDelaySeconds,
+            secConfig.exitDelaySeconds);
+    }
+
     // Update sensor states from MCP23017 inputs
     // Call this in loop() to poll for changes
     void updateSensorStates() {
@@ -99,17 +134,29 @@ public:
 
             bool pinState = (currentState & (1 << i)) != 0;
 
+            // Determine if sensor is active (considering inversion handled in sensor classes)
+            bool sensorActive = pinState;
+
             if (_motionSensors[i]) {
                 _motionSensors[i]->setDetected(pinState);
+                sensorActive = _motionSensors[i]->isDetected();
             }
             if (_leakSensors[i]) {
                 _leakSensors[i]->setLeakDetected(pinState);
+                sensorActive = _leakSensors[i]->isLeakDetected();
             }
             if (_smokeSensors[i]) {
                 _smokeSensors[i]->setSmokeDetected(pinState);
+                sensorActive = _smokeSensors[i]->isSmokeDetected();
             }
             if (_co2Sensors[i]) {
                 _co2Sensors[i]->setCO2Detected(pinState);
+                sensorActive = _co2Sensors[i]->isCO2Detected();
+            }
+
+            // Notify SecuritySystem of sensor state change
+            if (_securitySystem) {
+                _securitySystem->sensorTriggered(i, sensorActive);
             }
         }
     }
@@ -137,6 +184,7 @@ public:
 
 private:
     MCP23017Handler* _mcp;
+    SecuritySystemService* _securitySystem;
 
     // Arrays to store accessory pointers by pin number
     MotionSensorAccessory* _motionSensors[NUM_PINS];
