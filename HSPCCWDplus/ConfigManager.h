@@ -23,7 +23,10 @@ enum class PinType : uint8_t {
     LEAK = 2,
     SMOKE = 3,
     CO2 = 4,
-    VALVE = 5
+    VALVE = 5,
+    CONTACT = 6,
+    OCCUPANCY = 7,
+    CO = 8
 };
 
 // Pin configuration structure
@@ -39,7 +42,9 @@ struct PinConfig {
 
     bool isInput() const {
         return type == PinType::MOTION || type == PinType::LEAK ||
-               type == PinType::SMOKE || type == PinType::CO2;
+               type == PinType::SMOKE || type == PinType::CO2 ||
+               type == PinType::CONTACT || type == PinType::OCCUPANCY ||
+               type == PinType::CO;
     }
 
     bool isOutput() const {

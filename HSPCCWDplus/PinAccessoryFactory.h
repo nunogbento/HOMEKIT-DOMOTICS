@@ -9,9 +9,12 @@
 #include "LeakSensor.h"
 #include "SmokeSensor.h"
 #include "CarbonDioxide.h"
+#include "ContactSensor.h"
+#include "OccupancySensor.h"
+#include "CarbonMonoxideSensor.h"
 #include "Valve.h"
 #include "SecuritySystem.h"
-#include "SimpleAccessoryInfo.h"
+#include "AccessoryInfo.h"
 
 class PinAccessoryFactory {
 public:
@@ -21,6 +24,9 @@ public:
             _leakSensors[i] = nullptr;
             _smokeSensors[i] = nullptr;
             _co2Sensors[i] = nullptr;
+            _contactSensors[i] = nullptr;
+            _occupancySensors[i] = nullptr;
+            _coSensors[i] = nullptr;
             _valves[i] = nullptr;
         }
     }
@@ -48,7 +54,7 @@ public:
             uint32_t aid = baseId + i;
             snprintf(serialNum, sizeof(serialNum), "AID-%03d", aid);
             new SpanAccessory(aid);
-            new SimpleAccessoryInfo(
+            new AccessoryInfo(
                 pinConfig.name.c_str(),
                 "MORDOMUS",
                 serialNum,
@@ -71,6 +77,18 @@ public:
 
                 case PinType::CO2:
                     _co2Sensors[i] = new CarbonDioxideSensorAccessory(i, pinConfig.inverted, pinConfig.cooldown);
+                    break;
+
+                case PinType::CONTACT:
+                    _contactSensors[i] = new ContactSensorAccessory(i, pinConfig.inverted, pinConfig.cooldown);
+                    break;
+
+                case PinType::OCCUPANCY:
+                    _occupancySensors[i] = new OccupancySensorAccessory(i, pinConfig.inverted, pinConfig.cooldown);
+                    break;
+
+                case PinType::CO:
+                    _coSensors[i] = new CarbonMonoxideSensorAccessory(i, pinConfig.inverted, pinConfig.cooldown);
                     break;
 
                 case PinType::VALVE:
@@ -103,7 +121,7 @@ public:
         char serialNum[16];
         snprintf(serialNum, sizeof(serialNum), "AID-%03d", fixedId);
         new SpanAccessory(fixedId);
-        new SimpleAccessoryInfo(
+        new AccessoryInfo(
             secConfig.name.c_str(),
             "MORDOMUS",
             serialNum,
@@ -153,6 +171,18 @@ public:
                 _co2Sensors[i]->setCO2Detected(pinState);
                 sensorActive = _co2Sensors[i]->isCO2Detected();
             }
+            if (_contactSensors[i]) {
+                _contactSensors[i]->setContactState(pinState);
+                sensorActive = _contactSensors[i]->isOpen();
+            }
+            if (_occupancySensors[i]) {
+                _occupancySensors[i]->setOccupancyDetected(pinState);
+                sensorActive = _occupancySensors[i]->isOccupied();
+            }
+            if (_coSensors[i]) {
+                _coSensors[i]->setCODetected(pinState);
+                sensorActive = _coSensors[i]->isCODetected();
+            }
 
             // Notify SecuritySystem of sensor state change
             if (_securitySystem) {
@@ -182,6 +212,18 @@ public:
         return (pin < NUM_PINS) ? _valves[pin] : nullptr;
     }
 
+    ContactSensorAccessory* getContactSensor(uint8_t pin) {
+        return (pin < NUM_PINS) ? _contactSensors[pin] : nullptr;
+    }
+
+    OccupancySensorAccessory* getOccupancySensor(uint8_t pin) {
+        return (pin < NUM_PINS) ? _occupancySensors[pin] : nullptr;
+    }
+
+    CarbonMonoxideSensorAccessory* getCOSensor(uint8_t pin) {
+        return (pin < NUM_PINS) ? _coSensors[pin] : nullptr;
+    }
+
 private:
     MCP23017Handler* _mcp;
     SecuritySystemService* _securitySystem;
@@ -191,6 +233,9 @@ private:
     LeakSensorAccessory* _leakSensors[NUM_PINS];
     SmokeSensorAccessory* _smokeSensors[NUM_PINS];
     CarbonDioxideSensorAccessory* _co2Sensors[NUM_PINS];
+    ContactSensorAccessory* _contactSensors[NUM_PINS];
+    OccupancySensorAccessory* _occupancySensors[NUM_PINS];
+    CarbonMonoxideSensorAccessory* _coSensors[NUM_PINS];
     ValveAccessory* _valves[NUM_PINS];
 
     const char* getAccessoryModel(PinType type) {
@@ -199,6 +244,9 @@ private:
             case PinType::LEAK: return "Leak Sensor";
             case PinType::SMOKE: return "Smoke Sensor";
             case PinType::CO2: return "CO2 Sensor";
+            case PinType::CONTACT: return "Contact Sensor";
+            case PinType::OCCUPANCY: return "Occupancy Sensor";
+            case PinType::CO: return "CO Sensor";
             case PinType::VALVE: return "Valve";
             default: return "Unknown";
         }

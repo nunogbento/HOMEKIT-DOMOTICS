@@ -7,8 +7,8 @@
 #include "PCCWDController.h"
 #include "OF8WdOutput.h"
 #include "IN10WdStatelessProgrammableSwitch.h"
-#include "DEV_Identify.h"
-#include "SimpleAccessoryInfo.h"
+#include "OF8WdAccessoryInfo.h"
+#include "AccessoryInfo.h"
 
 // MCP23017 GPIO Expander components (web configurable)
 #include "MCP23017Handler.h"
@@ -20,6 +20,7 @@
 
 // PWM Dimmable LED (hardcoded on GPIO2)
 #include "DimmableLED.h"
+#include "PWMLEDAccessoryInfo.h"
 
 // Pin assignments for ESP32-C6 (WT0132C6-S5)
 #define STATUS_LED_PIN    8
@@ -38,6 +39,7 @@
 // PCCWD Bus accessories (conditionally created based on config)
 IN10wDStatelessProgrammableSwitch* switches[NUM_IN10WD] = {nullptr};
 OF8WdOutput* outputs[NUM_OF8WD] = {nullptr};
+OF8WdAccessoryInfo* of8wdAccessoryInfo[NUM_OF8WD] = {nullptr};
 PCCWDController pccwdController(Serial1);
 
 // PCCWD bus addresses (loaded from config)
@@ -49,6 +51,7 @@ MCP23017Handler mcpHandler(MCP23017_ADDR);
 ConfigManager configManager;
 PinAccessoryFactory pinFactory;
 WebConfigServer* webServer = nullptr;
+PWMLEDAccessoryInfo* pwmLedAccessoryInfo = nullptr;
 
 // Sensor polling interval
 const unsigned long SENSOR_POLL_INTERVAL = 100;  // 100ms
@@ -65,7 +68,7 @@ unsigned long lastSensorPoll = 0;
 
 void setupWeb(){
   webServer = new WebConfigServer();
-   webServer->begin(configManager, mcpHandler);
+  webServer->begin(configManager, mcpHandler);
   LOG_D("Web config server started at http://%s/\n", WiFi.localIP().toString().c_str());
 }
 
@@ -109,15 +112,15 @@ void setup() {
   homeSpan.setApPassword("");
   homeSpan.enableAutoStartAP();
   homeSpan.setPortNum(8080);  // Move HomeSpan off port 80 for web server
-  homeSpan.setWifiCallback(setupWeb);     // need to start Web Server after WiFi is established 
-  
+  homeSpan.setWifiCallback(setupWeb);     // need to start Web Server after WiFi is established
+
   homeSpan.begin(Category::Bridges, "PCCWD", "PCCWD", "PCCWD Bridge");
 
   // Create bridge accessory (fixed ID 1)
   char serialNum[16];
   snprintf(serialNum, sizeof(serialNum), "AID-%03d", AID_BRIDGE);
   new SpanAccessory(AID_BRIDGE);
-  new DEV_Identify("PCCWD", "MORDOMUS", serialNum, "PCCWD", "0.2", 3);
+  new AccessoryInfo("PCCWD", "MORDOMUS", serialNum, "PCCWD", "0.2");
 
   // ============================================
   // PCCWD Bus Accessories (conditionally created)
@@ -130,10 +133,11 @@ void setup() {
     if (configManager.isOF8WdEnabled(i)) {
       const HardcodedDeviceConfig& cfg = configManager.getOF8WdConfig(i);
       uint32_t aid = AID_OF8WD_BASE + i;
+      uint8_t address = of8wdBaseAddress + i;
       snprintf(serialNum, sizeof(serialNum), "AID-%03d", aid);
       new SpanAccessory(aid);
-      new DEV_Identify(cfg.name.c_str(), "MORDOMUS", serialNum, "OF8Wd", "0.1", 0);
-      outputs[i] = new OF8WdOutput(of8wdBaseAddress + i);
+      of8wdAccessoryInfo[i] = new OF8WdAccessoryInfo(cfg.name.c_str(), "MORDOMUS", serialNum, "OF8Wd", "0.1", address, &pccwdController, 3);
+      outputs[i] = new OF8WdOutput(address);
       outputs[i]->setupdate_calback([](byte address, bool newPowerState) {
         pccwdController.setOnSate(address, newPowerState);
       });
@@ -151,7 +155,7 @@ void setup() {
       uint32_t aid = AID_IN10WD_BASE + i;
       snprintf(serialNum, sizeof(serialNum), "AID-%03d", aid);
       new SpanAccessory(aid);
-      new SimpleAccessoryInfo(cfg.name.c_str(), "MORDOMUS", serialNum, "IN10wd", "0.1");
+      new AccessoryInfo(cfg.name.c_str(), "MORDOMUS", serialNum, "IN10wd", "0.1");
       switches[i] = new IN10wDStatelessProgrammableSwitch(in10wdBaseAddress + i);
       in10wdCount++;
     }
@@ -176,7 +180,7 @@ void setup() {
     const HardcodedDeviceConfig& ledCfg = configManager.getPwmLedConfig();
     snprintf(serialNum, sizeof(serialNum), "AID-%03d", AID_PWM_LED);
     new SpanAccessory(AID_PWM_LED);
-    new DEV_Identify(ledCfg.name.c_str(), "MORDOMUS", serialNum, "PWM LED", "0.1", 0);
+    pwmLedAccessoryInfo = new PWMLEDAccessoryInfo(ledCfg.name.c_str(), "MORDOMUS", serialNum, "PWM LED", "0.1", LED_PWM_PIN, 3);
     new DimmableLED(LED_PWM_PIN);
     Serial.println("PWM Dimmable LED created on GPIO2");
   } else {
@@ -211,8 +215,19 @@ void loop() {
   // PCCWD bus polling
   pccwdController.loop();
 
+  // OF8Wd identify blink polling
+  for (int i = 0; i < NUM_OF8WD; i++) {
+    if (of8wdAccessoryInfo[i]) {
+      of8wdAccessoryInfo[i]->loop();
+    }
+  }
+
+  // PWM LED identify blink polling
+  if (pwmLedAccessoryInfo) {
+    pwmLedAccessoryInfo->loop();
+  }
+
   // Web server polling
-  
   if (webServer) webServer->loop();
 
   // MCP23017 sensor polling (at reduced rate)
