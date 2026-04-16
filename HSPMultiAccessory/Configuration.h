@@ -2,7 +2,7 @@
 #define CONFIGURATION_H_
 
 
-#define ACCESSORY_NAME "LS Light"
+#define ACCESSORY_NAME "Gest Bed Light"
 #define IR_LED_PIN 21
 
 #define L1PIN 6

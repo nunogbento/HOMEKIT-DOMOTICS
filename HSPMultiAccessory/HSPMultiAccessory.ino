@@ -19,29 +19,29 @@ void setup() {
   homeSpan.enableOTA(false);
   homeSpan.enableAutoStartAP();
   homeSpan.setHostNameSuffix("v1");
-  homeSpan.begin(Category::Bridges, "MultiAccessory-LVA","MultiAccessoryLVA");
+  homeSpan.begin(Category::Bridges, "MultiAccessory-GUEST","MultiAccessoryGUEST");
   
   new SpanAccessory();  
     new Service::AccessoryInformation();
       new Characteristic::Identify(); 
 
-  new SpanAccessory();
-    new Service::AccessoryInformation();
-      new Characteristic::Identify(); 
-      new Characteristic::Name("CCT Led Strip");
-    new CCTLightBulbService(cw1_LedPin, ww1_LedPin);
+  // new SpanAccessory();
+  //   new Service::AccessoryInformation();
+  //     new Characteristic::Identify(); 
+  //     new Characteristic::Name("CCT Led Strip");
+  //   new CCTLightBulbService(cw1_LedPin, ww1_LedPin);
 
-  new SpanAccessory();
-    new Service::AccessoryInformation();
-      new Characteristic::Identify(); 
-      new Characteristic::Name("Led Strip 1");
-    new DimmableLightBulbService(cw2_LedPin);
+  // new SpanAccessory();
+  //   new Service::AccessoryInformation();
+  //     new Characteristic::Identify(); 
+  //     new Characteristic::Name("Led Strip 1");
+  //   new DimmableLightBulbService(cw2_LedPin);
     
   new SpanAccessory();
    new Service::AccessoryInformation();
       new Characteristic::Identify(); 
-      new Characteristic::Name("Led Strip 2");
-    new DimmableLightBulbService(ww2_LedPin);
+      new Characteristic::Name("Led Strip");
+    new DimmableLightBulbService(cw1_LedPin);
 
   // new SpanAccessory();
   //  new Service::AccessoryInformation();

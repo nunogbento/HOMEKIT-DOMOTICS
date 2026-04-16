@@ -133,7 +133,7 @@ struct LGACHeaterCoolerService : Service::HeaterCooler {
       }
     }
     if (AC_updated) {
-      Serial.println("AC Status UPDATE SENT TO IR:" + ac.toString());
+      LOG_D("AC Status UPDATE SENT TO IR: %s", ac.toString());
       ac.send();
       AC_updated = false;
     }

@@ -238,3 +238,22 @@ mqtt-LightbulbwithtempandIR/Hardware/mqtt-LightbulbwithtempandIR.cmp
 Mqtt.MordomusESP8266/HArdware/mordomusesp8266_2019-06-30.zip
 *.zip
 Mqtt.ESP8266PlantConputer/HArdware - Copy/PlantComputerEsp8266_2019-10-29/CAMOutputs/
+HKPCCWD/.DS_Store
+HKPCCWD/Hardware/.DS_Store
+HSPCCWDplus/.DS_Store
+HKPCCWD/Hardware/.DS_Store
+Mqtt.MordomusESP8266/.DS_Store
+Mqtt.MordomusESP8266/.DS_Store
+.DS_Store
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+.clang_complete
+.gcc-flags.json
+
+# Arduino IDE build artifacts
+*.elf
+*.hex
+*.bin
