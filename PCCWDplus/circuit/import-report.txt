@@ -1,0 +1,12 @@
+Import Report
+=============
+
+Source file: mordomusesp8266.brd
+Source format: Eagle
+Output file: mordomusesp8266.kicad_pcb
+
+Statistics:
+  Footprints: 45
+  Tracks: 278
+  Vias: 9
+  Zones: 4
