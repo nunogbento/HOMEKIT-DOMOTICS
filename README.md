@@ -11,8 +11,7 @@ Each top-level folder is one project. Projects with a custom PCB have:
 <Project>/
 ├── firmware/      one subfolder per firmware version (generation)
 ├── circuit/       PCB design files (.brd / .sch / .cam)
-├── enclosure/     3D-printable bodies (where applicable)
-└── services/      companion Node.js apps / Node-RED nodes (PCCWDplus only)
+└── enclosure/     3D-printable bodies (where applicable)
 ```
 
 Projects without a custom PCB omit `circuit/`, and use `enclosure/` only if a
@@ -25,7 +24,6 @@ Main panel board. Succession: MQTT (ESP8266) → HomeSpan (ESP32-C5).
 Gen 2 (HAP/ESP8266) was attempted but failed; see archive notes.
 - `firmware/Mqtt.MordomusESP8266/` — gen 1, MQTT/ESP8266 — **deployed**
 - `firmware/HSPCCWDplus/` — gen 3, HomeSpan/ESP32-C5 — **WIP**, pin-compatible drop-in
-- `services/pccwdapi/`, `services/node-red-contrib-pccwd/`
 
 ### [MultiAccessory](MultiAccessory/) — custom PCB
 Multi-device controller board. Gen 2 still deployed, gen 3 in progress.
@@ -69,5 +67,5 @@ active hardware project. Includes:
 - Early MQTT experiments (lightbulbs, rollerblinds, power meter, etc.)
 - Side experiments (CameraWebServer, ESP-32CAM, SONOFFAPI, WaterDetector)
 - `Tradfri-ICC-1/` — reverse-engineering research that informed MultiAccessory
-- `MordomusAPI/`, `PowerMeter/` — no longer used
+- `MordomusAPI/`, `PowerMeter/`, `pccwdapi/`, `node-red-contrib-pccwd/` — no longer used
 - `homebridge-host/` — Homebridge configuration, Node-RED flows, backups
