@@ -473,7 +473,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "mordomusesp8266.kicad_pro",
+    "filename": "PCCWDPLUSREV2.kicad_pro",
     "version": 3
   },
   "net_settings": {
@@ -666,8 +666,8 @@
     "subpart_id_separator": 0,
     "top_level_sheets": [
       {
-        "filename": "mordomusesp8266.kicad_sch",
-        "name": "mordomusesp8266_1",
+        "filename": "PCCWDPLUSREV2.kicad_sch",
+        "name": "PCCWDPLUSREV2_1",
         "uuid": "95a2b565-bf0b-47c4-8b7f-cc2f5346d147"
       }
     ],
@@ -677,7 +677,7 @@
   "sheets": [
     [
       "95a2b565-bf0b-47c4-8b7f-cc2f5346d147",
-      "mordomusesp8266_1"
+      "PCCWDPLUSREV2_1"
     ]
   ],
   "text_variables": {},
