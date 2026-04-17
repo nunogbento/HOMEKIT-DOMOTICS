@@ -257,3 +257,11 @@ Mqtt.MordomusESP8266/.DS_Store
 *.elf
 *.hex
 *.bin
+
+# KiCad
+*-backups/
+fp-info-cache
+*.kicad_prl
+
+# VSCode "Local History" extension
+.history/

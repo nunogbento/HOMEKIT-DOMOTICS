@@ -1,0 +1,5 @@
+(sym_lib_table
+	(version 7)
+	(lib (name "mordomusesp8266-eagle-import") (type "KiCad") (uri "${KIPRJMOD}/mordomusesp8266-eagle-import.kicad_sym") (options "") (descr ""))
+	(lib (name "pccwd-local") (type "KiCad") (uri "${KIPRJMOD}/lib/WT0132C6-S5.kicad_sym") (options "") (descr "Project-local parts (WT0132C6-S5 and future additions)"))
+)
