@@ -1,0 +1,5 @@
+# Local secrets — never commit
+secrets.h
+
+# Build artifacts
+build/

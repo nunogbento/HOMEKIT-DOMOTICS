@@ -1,0 +1,64 @@
+# Home Assistant package: Doorbell (Comelit intercom interceptor -> ESP32-C3 -> HomeKit)
+# Deployed to the Pi at /config/packages/doorbell.yaml
+#
+# Flow:
+#   ESP32-C3 cold-boots on a ring -> POST /api/webhook/CHANGE_ME_webhook_id
+#   -> automation -> mqtt.publish doorbell/ring -> event.doorbell fires
+#   -> Doorbell Bridge (HomeKit) sends the family-wide doorbell notification.
+#
+# event.doorbell reuses the prior unique_id + device identifiers (keeps history).
+#
+# NOTE: replace CHANGE_ME_webhook_id with a private, hard-to-guess id (e.g.
+# `openssl rand -hex 8`). It must match HA_WEBHOOK_URL in the device's secrets.h.
+# Keep the real id out of version control.
+
+mqtt:
+  event:
+    - name: Doorbell
+      unique_id: doorbell_9dde8f2de6b4_doorbell
+      device_class: doorbell
+      state_topic: doorbell/ring
+      event_types:
+        - pressed
+      value_template: "{{ {'event_type': 'pressed'} | tojson }}"
+      device:
+        identifiers:
+          - doorbell
+        name: Doorbell
+        manufacturer: DIY
+        model: ESP32-C3 (webhook)
+
+automation:
+  - id: doorbell_ring_webhook
+    alias: Doorbell ring (webhook -> event)
+    # queued: the bell can be pressed several times during the power window;
+    # each POST should fire its own event rather than being dropped.
+    mode: queued
+    max: 5
+    triggers:
+      - trigger: webhook
+        webhook_id: CHANGE_ME_webhook_id
+        allowed_methods:
+          - POST
+        local_only: true
+    actions:
+      - action: mqtt.publish
+        data:
+          topic: doorbell/ring
+          payload: "ring"
+
+# Dedicated HomeKit bridge. Exposes camera.doorbell with a Doorbell service so
+# HomeKit pushes the doorbell notification to every family member's devices,
+# anywhere (requires a Home Hub — HomePod/Apple TV — which you have).
+# camera.doorbell is a placeholder still image for now; in Phase 2 we point that
+# same camera at the digitized Comelit video and NOTHING here changes.
+homekit:
+  - name: Doorbell Bridge
+    port: 21073
+    mode: bridge
+    filter:
+      include_entities:
+        - camera.doorbell
+    entity_config:
+      camera.doorbell:
+        linked_doorbell_sensor: event.doorbell
