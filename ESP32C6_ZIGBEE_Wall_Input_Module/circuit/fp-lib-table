@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "WT0132")(type "KiCad")(uri "${KIPRJMOD}/WT0132.pretty")(options "")(descr "WT0132C6-S5 land pattern (from PCCWDplus, proven)"))
+)

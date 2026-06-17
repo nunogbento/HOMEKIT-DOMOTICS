@@ -265,3 +265,6 @@ fp-info-cache
 
 # VSCode "Local History" extension
 .history/
+
+# KiCad pre-route safety backups
+*.kicad_pcb.*.bak
