@@ -268,3 +268,5 @@ fp-info-cache
 
 # KiCad pre-route safety backups
 *.kicad_pcb.*.bak
+*-erc.rpt
+*-DRC.rpt

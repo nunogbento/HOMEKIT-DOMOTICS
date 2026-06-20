@@ -95,7 +95,7 @@ ESP-12 boards. It exposes exactly what this design needs.
 ```
 3V3 ──┬──────────────── pin 8  (VCC)
       │
-     C6 100 µF + C7 100 nF  (right at the module pins)
+     C6 47 µF + C7 100 nF  (right at the module pins)
       │
 GND ──┴──────────────── pin 9  (GND)
 
@@ -183,7 +183,7 @@ the other side.
 | C2, C5, C7, C9, C10 | Ceramic X7R | 100 nF / 50 V | 0805 |
 | C3 | Ceramic X5R | 10 µF / 16 V (LDO in) | 0805 |
 | C4 | Tantalum | 22 µF / 10 V (LDO out — required for AMS1117 stability) | EIA-3528 (B) |
-| C6 | Aluminium electrolytic | 100 µF / 6.3 V (3V3 at module) | SMD 4×5.4 mm |
+| C6 | Aluminium electrolytic | 47 µF / 16 V (3V3 at module) | SMD Ø4–5 ×5.4 mm — LCSC C3337 (Ø5 can fits the Ø4 footprint by hand) |
 | C8 | Ceramic X7R | 1 µF (EN delay) | 0805 |
 | LED1 | LED | status (green) | 0805 |
 | SW3 | Tactile switch | BOOT (IO9) | SMD (TL3342) |
