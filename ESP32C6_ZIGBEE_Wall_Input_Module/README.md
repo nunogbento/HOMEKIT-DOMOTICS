@@ -42,6 +42,7 @@ network instead of being one more sleepy battery device.
 |---|---|
 | [`ESP32C6_ZIGBEE_Wall_Input_Module.ino`](ESP32C6_ZIGBEE_Wall_Input_Module.ino) | Arduino sketch (compile-time board switch: WT0132C6-S5 or XIAO ESP32C6 prototype) |
 | [`HARDWARE.md`](HARDWARE.md) | Circuit design, net-by-net description, BOM, install guide |
+| [`ASSEMBLY.md`](ASSEMBLY.md) | Hand-assembly guide: part IDs/markings, build order, staged bring-up tests |
 | [`FABRICATION.md`](FABRICATION.md) | JLCPCB order settings + gerber package |
 | [`diy_esp32c6_2ch_input.js`](diy_esp32c6_2ch_input.js) | Zigbee2MQTT external converter (two contact endpoints) |
 | [`circuit/`](circuit/) | KiCad 10 project — schematic, board, custom WT0132C6-S5 library, gerbers (`fab/`) |
