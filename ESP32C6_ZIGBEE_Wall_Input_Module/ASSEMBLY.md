@@ -100,6 +100,9 @@ and the side rows for bridges.
 
 ### ✅ TEST 3 — powered, with ESP
 - Power from bench 5 V (or mains). 3V3 still ≈ 3.3 V under the module's load.
+  Back-feeding 5 V into the HLK output with **mains disconnected is safe** —
+  the HLK is isolated (3 kVAC) and its output rectifier blocks reverse
+  current; just keep polarity correct and never bench-power and mains at once.
 - Total draw tens of mA; **status LED (GPIO18) blinks** while searching.
 - Excess current or no 3.3 V → check U3 for solder bridges (pins 8↔9 first).
 
