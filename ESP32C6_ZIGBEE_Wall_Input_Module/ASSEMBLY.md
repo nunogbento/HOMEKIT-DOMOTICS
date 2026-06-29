@@ -104,14 +104,55 @@ and the side rows for bridges.
 - Excess current or no 3.3 V → check U3 for solder bridges (pins 8↔9 first).
 
 ### ✅ TEST 4 — firmware & function
-- Flash via **J3** (USB-UART): 3V3, GND, TX→RX, RX→TX, hold **IO9 low**,
-  pulse **EN**, upload, release IO9.
+- Flash via **J3** — see *Flashing connector* below for pinout/wiring.
 - On boot: LED blinks (joining) → solid when it joins Zigbee → off after 3 s.
 - **Inputs:** short **J2 SW1→COM**, then **SW2→COM** — each toggles its
   `contact_*` in Zigbee2MQTT. Both rocker states / momentary presses register.
 - **BOOT button:** 5 s hold = factory reset / re-pair.
 
 ---
+
+## 3a. Flashing connector (J3)
+
+J3 is a 1×6, 1.27 mm header. **Pin 1 is the square pad** (3V3 end).
+
+| J3 pin | Net | ESP signal | Connect to USB-UART |
+|---|---|---|---|
+| 1 | **3V3** | module 3V3 | adapter 3V3 — *power option only, see below* |
+| 2 | **GND** | GND | adapter **GND** (always) |
+| 3 | **TXD0** | GPIO16, ESP **out** | adapter **RX** |
+| 4 | **RXD0** | GPIO17, ESP **in** | adapter **TX** |
+| 5 | **EN** | reset | tie to GND to reset (manual) |
+| 6 | **IO9** | boot strap | tie to GND for download mode (= the BOOT button) |
+
+```
+   USB-UART            J3
+   ---------           ----
+   GND  ───────────────  2  GND
+   TX   ───────────────  4  RXD0   (TX→RX, crossed)
+   RX   ───────────────  3  TXD0   (RX→TX, crossed)
+   3V3  ──(power opt)───  1  3V3
+```
+
+**Rules:**
+- **3.3 V logic only.** Set the adapter's level jumper to 3V3 — the C6 is not
+  5 V tolerant. (CP2102 / CH340 / FT232 modules all have a 3V3 setting.)
+- **TX↔RX cross over** (adapter TX → J3 RXD0, adapter RX → J3 TXD0).
+- **Powering during flash — pick ONE, never two:**
+  - adapter **3V3 → J3 pin 1** (simplest on the bench), **or**
+  - bench **5 V** into the board (Test 1 injection point) and leave J3 pin 1
+    disconnected — just GND/TX/RX to the adapter.
+- ⚠️ **Never flash with mains on J1.** The adapter ground would be tied to
+  mains — it will destroy the adapter/PC and is a shock hazard. Flashing is a
+  bench, mains-OFF operation. Native USB (GPIO12/13) isn't broken out, so UART
+  is the only path.
+
+**Enter download mode** (J3 has no auto-reset DTR/RTS wiring, so it's manual):
+1. Hold the **BOOT button** (SW3 — pulls IO9 low). *(or jumper J3 pin 6→GND)*
+2. Briefly tie **J3 pin 5 (EN) → GND** and release — *(or power-cycle the board)*.
+3. Release BOOT.
+4. The C6 ROM is now in download mode — run `esptool` / Arduino "Upload"
+   (autobaud, no need to set speed). When done, pulse EN / power-cycle to run.
 
 ## 4. Finish
 
