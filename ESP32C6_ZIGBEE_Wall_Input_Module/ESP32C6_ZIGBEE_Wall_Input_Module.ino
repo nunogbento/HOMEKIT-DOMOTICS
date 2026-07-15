@@ -60,6 +60,24 @@
 ZigbeeContactSwitch zbInput1 = ZigbeeContactSwitch(10);
 ZigbeeContactSwitch zbInput2 = ZigbeeContactSwitch(11);
 
+/* ============================================================
+ *  ZIGBEE OTA — non-negotiable: once in-wall, the J3 programming
+ *  header is unreachable, so ALL future updates go over the Zigbee
+ *  mesh (OTA Upgrade cluster, pushed by zigbee2mqtt). The device
+ *  polls the OTA server ~1 min after join, then hourly.
+ *  >>> BUMP OTA_RUNNING_FILE_VERSION ON EVERY RELEASE <<< (Z2M only
+ *  offers an image whose fileVersion is HIGHER than what the device
+ *  reports). Keep the Z2M OTA index entry's manufacturerCode/imageType
+ *  matching OTA_MANUFACTURER_CODE / OTA_IMAGE_TYPE below.
+ * ============================================================ */
+#define OTA_RUNNING_FILE_VERSION    0x01000000   // v1.0.0 — this build. Increment each release.
+#define OTA_DOWNLOADED_FILE_VERSION 0x01000000   // mirrors running at flash time
+#define OTA_HW_VERSION              0x0101       // WT0132C6-S5 board rev
+#define OTA_MANUFACTURER_CODE       0x1001       // must match the Z2M OTA index entry
+#define OTA_IMAGE_TYPE              0x1011       // must match the Z2M OTA index entry
+
+volatile bool otaRunning = false;
+
 /* --- STATE VARIABLES --- */
 struct SwitchInput {
   uint8_t pin;
@@ -89,6 +107,14 @@ unsigned long lastClickTime = 0;
 
 // Push debounced states to Zigbee once the network is up
 bool initialStateReported = false;
+// Kick off the OTA server query once, on the first successful join
+bool otaRequested = false;
+
+/* --- OTA STATE CALLBACK --- */
+void otaStateChanged(bool active) {
+  otaRunning = active;
+  Serial.println(active ? "OTA: transfer STARTED" : "OTA: transfer FINISHED");
+}
 
 #ifdef HAS_RF_SWITCH
 /* --- ANTENNA SWITCH FUNCTION (XIAO only) --- */
@@ -152,6 +178,11 @@ void setup() {
   // 3. Zigbee identity — both endpoints carry the same Basic cluster info
   zbInput1.setManufacturerAndModel("DIY", "ESP32C6-2CH-INPUT");
   zbInput2.setManufacturerAndModel("DIY", "ESP32C6-2CH-INPUT");
+
+  // OTA client on endpoint 10 (one per device is enough) — MUST be added before Zigbee.begin()
+  zbInput1.addOTAClient(OTA_RUNNING_FILE_VERSION, OTA_DOWNLOADED_FILE_VERSION, OTA_HW_VERSION,
+                        OTA_MANUFACTURER_CODE, OTA_IMAGE_TYPE);
+  zbInput1.onOTAStateChange(otaStateChanged);
 
   Zigbee.addEndpoint(&zbInput1);
   Zigbee.addEndpoint(&zbInput2);
@@ -219,9 +250,13 @@ void loop() {
 #endif
   }
 
-  // Check for Long Hold (Reset)
+  // Check for Long Hold (Reset) — never mid-OTA (would brick the download)
   if (buttonPressed && (currentMillis - buttonPressTime > 5000)) {
-    triggerFactoryReset();
+    if (otaRunning) {
+      Serial.println("OTA in progress — factory reset ignored");
+    } else {
+      triggerFactoryReset();
+    }
     buttonPressed = false; // Prevent re-triggering
   }
 
@@ -254,6 +289,14 @@ void loop() {
     if (!initialStateReported && (currentMillis - connectedTime > 2000)) {
       initialStateReported = true;
       for (auto &in : inputs) reportInput(in);
+    }
+
+    // Kick off the OTA server query once, shortly after the first join
+    // (library then auto-repeats hourly). This is how future updates arrive.
+    if (!otaRequested && (currentMillis - connectedTime > 5000)) {
+      otaRequested = true;
+      zbInput1.requestOTAUpdate();
+      Serial.println("OTA: update check requested from server");
     }
   }
 
