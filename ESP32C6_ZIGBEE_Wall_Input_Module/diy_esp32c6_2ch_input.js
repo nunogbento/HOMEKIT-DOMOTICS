@@ -31,6 +31,13 @@ const definition = {
     fromZigbee: [fzLocal.contact_multi],
     toZigbee: [],
     exposes: [e.contact().withEndpoint('1'), e.contact().withEndpoint('2')],
+    // Zigbee OTA over the mesh (mandatory: no serial access once in-wall).
+    // `ota: true` makes Z2M check the OTA index for this device's
+    // manufacturerCode(0x1001)+imageType(0x1011) and offer any higher fileVersion.
+    // Point Z2M at our images with, in configuration.yaml:
+    //   ota:
+    //     zigbee_ota_override_index_location: ota/index.json
+    ota: true,
     meta: {multiEndpoint: true},
     endpoint: (device) => {
         return {'1': 10, '2': 11};
