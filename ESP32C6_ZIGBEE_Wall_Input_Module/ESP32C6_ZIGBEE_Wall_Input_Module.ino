@@ -2,8 +2,8 @@
 #include <Preferences.h>
 
 /*
- * ESP32-C6 ZIGBEE IN-WALL INPUT MODULE
- * ------------------------------------
+ * ESP32-C6 ZIGBEE IN-WALL SCENE / BUTTON MODULE
+ * ---------------------------------------------
  * Alternative to the Philips Hue Wall Switch Module, but mains powered
  * (Hi-Link HLK-PM01 -> AMS1117-3.3 -> WT0132C6-S5), so it joins the
  * mesh as a ZIGBEE ROUTER instead of a sleepy end device.
@@ -11,13 +11,21 @@
  * The WT0132C6-S5 is an ESP32-C6 module in the old ESP8266 ESP-12F land
  * pattern: side castellations, hand-solderable, drop-in for older boards.
  *
- * The lamp circuit is bridged permanently live (smart bulbs stay powered);
- * the existing wall switches are rewired to the module's two low-voltage
- * inputs and exposed to Zigbee2MQTT as two contact sensors (IAS zone,
- * endpoints 10 and 11).
+ * The two wall switches are wired to the module's low-voltage inputs and
+ * reported to Zigbee2MQTT as BUTTON ACTIONS (single / double / long) — the
+ * same model as a Hue dimmer or a Modomus scene switch, so HA maps each
+ * channel to a Stateless Programmable Switch (Single / Double / Long press)
+ * instead of a door/contact sensor.
  *
- * Identifies cleanly via external_converter on Z2M side (see
- * /home/pi/zigbee2mqtt/data/external_converters/diy_esp32c6_2ch_input.js)
+ * How the action is carried on Zigbee:
+ *   Each channel is a Multistate Input endpoint (genMultistateInput,
+ *   cluster 0x0012). On a gesture we write presentValue = 1/2/3 and report
+ *   it, then reset to 0. The Z2M external converter maps
+ *   presentValue -> action ('single'/'double'/'hold') per endpoint.
+ *   (see /home/pi/zigbee2mqtt/data/external_converters/diy_esp32c6_2ch_input.js)
+ *
+ * Zigbee OTA: EP10 carries an OTA client; requestOTAUpdate() is started from
+ * loop() only after the mesh is up, so field units can be updated wirelessly.
  *
  * Arduino IDE settings (arduino-esp32 core 3.x):
  *   Board:          ESP32C6 Dev Module  (or XIAO_ESP32C6 for the prototype)
@@ -43,6 +51,7 @@
 #define SW2_PIN 2          // D2: wall switch to GND
 #define BUTTON_PIN 9       // BOOT button is GPIO 9 (pairing / factory reset)
 #define STATUS_LED 15      // XIAO yellow user LED, active LOW
+#define HAS_STATUS_LED     // XIAO has a usable user LED
 #define HAS_RF_SWITCH      // XIAO has the internal/external antenna RF switch
 #endif
 
@@ -51,32 +60,59 @@
 #define SW1_PIN 4          // IO4: wall switch to GND (ext. 10k pull-up + RC)
 #define SW2_PIN 5          // IO5: wall switch to GND (ext. 10k pull-up + RC)
 #define BUTTON_PIN 9       // IO9, bottom castellation (pairing / factory reset)
-#define STATUS_LED 18      // IO18, active LOW — GPIO15 is not exposed on this module
+// No status LED: on the as-built board the LED net lands on GPIO17 (UART0 RX),
+// which we keep for serial debug, so the LED is dropped (device lives in a wall).
 #endif
 
-#define DEBOUNCE_MS 40     // Long in-wall runs pick up noise; debounce hard
+/* --- GESTURE TIMING (per input) --- */
+#define DEBOUNCE_MS      25    // Raw edge must be stable this long
+#define MULTI_WINDOW_MS  300   // Max gap between clicks to count as a multi-click
+#define LONG_PRESS_MS    600   // Hold at least this long = 'long'
+#define ACTION_CLEAR_MS  150   // After firing, reset multistate 0 so repeats re-report
 
-/* --- ZIGBEE ENDPOINTS --- */
-ZigbeeContactSwitch zbInput1 = ZigbeeContactSwitch(10);
-ZigbeeContactSwitch zbInput2 = ZigbeeContactSwitch(11);
+/* --- Gesture codes reported on genMultistateInput presentValue --- */
+#define ACT_IDLE   0
+#define ACT_SINGLE 1
+#define ACT_DOUBLE 2
+#define ACT_LONG   3
 
-/* --- STATE VARIABLES --- */
-struct SwitchInput {
+/* --- OTA (Zigbee firmware update over the mesh) --- */
+// Bump OTA_FW_RUNNING on every release so Z2M offers a newer image to units
+// already in the field. Version is 0xMMmmpprr — this build is v1.0.0.0.
+// MANUFACTURER + IMAGE_TYPE must match the Z2M OTA index entry and the .ota header.
+#define OTA_FW_RUNNING     0x01000000
+#define OTA_FW_DOWNLOADED  0x01000001
+#define OTA_HW_VERSION     0x0101
+#define OTA_MANUFACTURER   0x1001
+#define OTA_IMAGE_TYPE     0x1011
+
+/* --- ZIGBEE ENDPOINTS: two Multistate Input "buttons" --- */
+ZigbeeMultistate zbBtn1 = ZigbeeMultistate(10);
+ZigbeeMultistate zbBtn2 = ZigbeeMultistate(11);
+
+/* --- PER-INPUT GESTURE STATE --- */
+struct Button {
   uint8_t pin;
-  ZigbeeContactSwitch *endpoint;
-  bool stableState;        // Debounced level (HIGH = open, LOW = closed)
-  bool lastReading;        // Raw level seen on previous loop pass
-  unsigned long lastEdge;  // millis() of the last raw transition
+  ZigbeeMultistate *ep;
+  bool rawLast;                 // last raw level read
+  bool pressed;                 // debounced pressed state (true = shorted to GND)
+  unsigned long lastEdge;       // millis() of last raw transition
+  unsigned long pressStart;     // millis() when the current press began
+  bool longFired;               // long already emitted for this hold
+  uint8_t clickCount;           // clicks accumulated in the current burst
+  unsigned long lastRelease;    // millis() of last release
+  bool awaiting;                // waiting to see if another click arrives
+  unsigned long clearAt;        // millis() to reset presentValue to 0 (0 = idle)
 };
 
-SwitchInput inputs[2] = {
-  { SW1_PIN, &zbInput1, HIGH, HIGH, 0 },
-  { SW2_PIN, &zbInput2, HIGH, HIGH, 0 },
+Button buttons[2] = {
+  { SW1_PIN, &zbBtn1, HIGH, false, 0, 0, false, 0, 0, false, 0 },
+  { SW2_PIN, &zbBtn2, HIGH, false, 0, 0, false, 0, 0, false, 0 },
 };
 
 Preferences prefs;
 
-// Button tracking (factory reset hold + triple-click on XIAO)
+// Factory-reset button (IO9 / BOOT) tracking
 unsigned long buttonPressTime = 0;
 bool buttonPressed = false;
 bool lastButtonState = HIGH;
@@ -86,9 +122,6 @@ bool isExternalAntenna = false; // Tracks current antenna mode
 int clickCount = 0;             // Triple-click toggles internal/external antenna
 unsigned long lastClickTime = 0;
 #endif
-
-// Push debounced states to Zigbee once the network is up
-bool initialStateReported = false;
 
 #ifdef HAS_RF_SWITCH
 /* --- ANTENNA SWITCH FUNCTION (XIAO only) --- */
@@ -110,35 +143,42 @@ void applyAntennaConfig(bool useExternal) {
 /* --- RESET HELPER FUNCTION --- */
 void triggerFactoryReset() {
   Serial.println("FACTORY RESET TRIGGERED!");
+#ifdef HAS_STATUS_LED
   for (int i = 0; i < 6; i++) {
     digitalWrite(STATUS_LED, LOW);  delay(150);
     digitalWrite(STATUS_LED, HIGH); delay(150);
   }
+#else
+  delay(500);
+#endif
   Zigbee.factoryReset();
 }
 
-/* --- PUSH ONE INPUT STATE TO ZIGBEE --- */
-void reportInput(SwitchInput &in) {
-  // Switch shorts the input to GND: LOW = contact closed
-  if (in.stableState == LOW) {
-    in.endpoint->setClosed();
-  } else {
-    in.endpoint->setOpen();
+/* --- EMIT ONE GESTURE AS A MULTISTATE REPORT --- */
+void fireAction(Button &b, uint8_t code) {
+  const char *name = code == ACT_SINGLE ? "single" : code == ACT_DOUBLE ? "double" : "long";
+  Serial.printf("Button GPIO%d -> %s\n", b.pin, name);
+  if (Zigbee.connected()) {
+    b.ep->setMultistateInput(code);
+    b.ep->reportMultistateInput();
+    b.clearAt = millis() + ACTION_CLEAR_MS;  // reset to 0 shortly after
   }
 }
 
 void setup() {
   Serial.begin(115200);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
+#ifdef HAS_STATUS_LED
   pinMode(STATUS_LED, OUTPUT);
   digitalWrite(STATUS_LED, LOW); // LED ON = Booting
+#endif
 
-  // 1. Configure switch inputs (internal pull-up; the final board adds an
-  //    external 10k + RC on top for noise immunity on in-wall runs)
-  for (auto &in : inputs) {
-    pinMode(in.pin, INPUT_PULLUP);
-    in.stableState = digitalRead(in.pin);
-    in.lastReading = in.stableState;
+  // 1. Configure the two switch inputs (internal pull-up; the final board adds
+  //    an external 10k + RC on top for noise immunity on in-wall runs).
+  for (auto &b : buttons) {
+    pinMode(b.pin, INPUT_PULLUP);
+    b.rawLast = digitalRead(b.pin);
+    b.pressed = (b.rawLast == LOW);
   }
 
 #ifdef HAS_RF_SWITCH
@@ -150,52 +190,119 @@ void setup() {
 #endif
 
   // 3. Zigbee identity — both endpoints carry the same Basic cluster info
-  zbInput1.setManufacturerAndModel("DIY", "ESP32C6-2CH-INPUT");
-  zbInput2.setManufacturerAndModel("DIY", "ESP32C6-2CH-INPUT");
+  zbBtn1.setManufacturerAndModel("DIY", "ESP32C6-2CH-INPUT");
+  zbBtn2.setManufacturerAndModel("DIY", "ESP32C6-2CH-INPUT");
 
-  Zigbee.addEndpoint(&zbInput1);
-  Zigbee.addEndpoint(&zbInput2);
+  // 4. Each channel is a Multistate Input with 4 states (idle/single/double/long)
+  zbBtn1.addMultistateInput();
+  zbBtn1.setMultistateInputStates(4);
+  zbBtn1.setMultistateInputDescription("Button 1");
+  zbBtn2.addMultistateInput();
+  zbBtn2.setMultistateInputStates(4);
+  zbBtn2.setMultistateInputDescription("Button 2");
+
+  // OTA client on EP10 — lets Z2M push firmware over Zigbee, so once deployed
+  // the device updates wirelessly (no wired flashing / bodge header).
+  zbBtn1.addOTAClient(OTA_FW_RUNNING, OTA_FW_DOWNLOADED, OTA_HW_VERSION,
+                      OTA_MANUFACTURER, OTA_IMAGE_TYPE);
+
+  Zigbee.addEndpoint(&zbBtn1);
+  Zigbee.addEndpoint(&zbBtn2);
 
   // Router mode: the module is mains powered, so it strengthens the mesh —
   // the whole point of replacing the battery-powered Hue wall module.
   Zigbee.begin(ZIGBEE_ROUTER);
+  // NOTE: requestOTAUpdate() is deliberately NOT called here — the network is
+  // not up yet. It is kicked off once from loop() after Zigbee.connected().
 }
 
-void loop() {
-  unsigned long currentMillis = millis();
-
-  // --- 1. DEBOUNCED SWITCH INPUTS ---
-  for (auto &in : inputs) {
-    bool reading = digitalRead(in.pin);
-    if (reading != in.lastReading) {
-      in.lastEdge = currentMillis;   // Raw edge: restart the debounce window
-      in.lastReading = reading;
-    }
-    if ((currentMillis - in.lastEdge) > DEBOUNCE_MS && reading != in.stableState) {
-      in.stableState = reading;
-      Serial.printf("Input GPIO%d -> %s\n", in.pin, reading == LOW ? "CLOSED" : "OPEN");
-      reportInput(in);
+/* --- Run the gesture state-machine for one input --- */
+void serviceButton(Button &b, unsigned long now) {
+  // Debounce the raw level into b.pressed, and detect press/release edges.
+  bool raw = digitalRead(b.pin);
+  if (raw != b.rawLast) {
+    b.lastEdge = now;
+    b.rawLast = raw;
+  }
+  if ((now - b.lastEdge) > DEBOUNCE_MS) {
+    bool nowPressed = (raw == LOW);
+    if (nowPressed && !b.pressed) {
+      // ---- PRESS edge ----
+      b.pressed = true;
+      b.pressStart = now;
+      b.longFired = false;
+    } else if (!nowPressed && b.pressed) {
+      // ---- RELEASE edge ----
+      b.pressed = false;
+      if (!b.longFired) {
+        b.clickCount++;
+        if (b.clickCount >= 2) {
+          fireAction(b, ACT_DOUBLE);   // second click -> double immediately
+          b.clickCount = 0;
+          b.awaiting = false;
+        } else {
+          b.lastRelease = now;         // wait to see if a second click comes
+          b.awaiting = true;
+        }
+      }
     }
   }
 
-  // --- 2. MULTI-FUNCTION BUTTON LOGIC ---
+  // Hold detection: fire 'long' once the press passes the threshold.
+  if (b.pressed && !b.longFired && (now - b.pressStart) >= LONG_PRESS_MS) {
+    fireAction(b, ACT_LONG);
+    b.longFired = true;
+    b.clickCount = 0;
+    b.awaiting = false;
+  }
+
+  // Single-click resolves once the multi-click window closes with one click.
+  if (b.awaiting && (now - b.lastRelease) > MULTI_WINDOW_MS) {
+    fireAction(b, ACT_SINGLE);
+    b.clickCount = 0;
+    b.awaiting = false;
+  }
+
+  // Reset presentValue to idle so a repeat of the same gesture re-reports.
+  if (b.clearAt && now >= b.clearAt) {
+    if (Zigbee.connected()) {
+      b.ep->setMultistateInput(ACT_IDLE);
+      b.ep->reportMultistateInput();
+    }
+    b.clearAt = 0;
+  }
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  // --- 0. START OTA POLLING once, after the network is actually up ---
+  static bool otaRequested = false;
+  if (!otaRequested && Zigbee.connected()) {
+    otaRequested = true;
+    zbBtn1.requestOTAUpdate();   // first query ~1 min later, then hourly
+    Serial.println("OTA update polling started");
+  }
+
+  // --- 1. GESTURE INPUTS ---
+  for (auto &b : buttons) serviceButton(b, now);
+
+  // --- 2. FACTORY-RESET BUTTON (IO9 / BOOT) ---
   bool currentButtonState = digitalRead(BUTTON_PIN);
 
-  // Detect Button Press (HIGH to LOW transition)
   if (lastButtonState == HIGH && currentButtonState == LOW) {
 #ifdef HAS_RF_SWITCH
-    if (currentMillis - lastClickTime > 600) {
+    if (now - lastClickTime > 600) {
       clickCount = 1; // Reset click count if too much time passed
     } else {
       clickCount++;
     }
-    lastClickTime = currentMillis;
+    lastClickTime = now;
 #endif
     buttonPressed = true;
-    buttonPressTime = currentMillis;
+    buttonPressTime = now;
   }
 
-  // Detect Button Release (LOW to HIGH transition)
   if (lastButtonState == LOW && currentButtonState == HIGH) {
     buttonPressed = false;
 
@@ -209,7 +316,6 @@ void loop() {
       prefs.end();
 
       Serial.println(isExternalAntenna ? "SWITCHED TO EXTERNAL ANTENNA" : "SWITCHED TO INTERNAL ANTENNA");
-      // Visual feedback: 2 slow blinks = internal, 4 = external
       for (int i = 0; i < (isExternalAntenna ? 4 : 2); i++) {
         digitalWrite(STATUS_LED, LOW);  delay(250);
         digitalWrite(STATUS_LED, HIGH); delay(250);
@@ -219,43 +325,37 @@ void loop() {
 #endif
   }
 
-  // Check for Long Hold (Reset)
-  if (buttonPressed && (currentMillis - buttonPressTime > 5000)) {
+  // Long hold on the BOOT button = factory reset
+  if (buttonPressed && (now - buttonPressTime > 5000)) {
     triggerFactoryReset();
-    buttonPressed = false; // Prevent re-triggering
+    buttonPressed = false;
   }
 
   lastButtonState = currentButtonState;
 
-  // --- 3. STATUS LED LOGIC ---
+  // --- 3. CONNECTION STATUS LED (only if the board has one) ---
+#ifdef HAS_STATUS_LED
   static unsigned long lastBlinkTime = 0;
   static bool blinkState = false;
   static bool wasConnected = false;
   static unsigned long connectedTime = 0;
-
   if (!Zigbee.connected()) {
-    if (currentMillis - lastBlinkTime > 500) {
-      lastBlinkTime = currentMillis;
+    if (now - lastBlinkTime > 500) {
+      lastBlinkTime = now;
       blinkState = !blinkState;
       digitalWrite(STATUS_LED, blinkState ? LOW : HIGH); // Blink while searching
     }
     wasConnected = false;
-    initialStateReported = false;
   } else {
     if (!wasConnected) {
       wasConnected = true;
-      connectedTime = currentMillis;
+      connectedTime = now;
       digitalWrite(STATUS_LED, LOW); // Solid ON when connected
-    } else if (currentMillis - connectedTime > 3000) {
-      digitalWrite(STATUS_LED, HIGH); // Turn off after 3s — it lives inside a wall box anyway
-    }
-
-    // Sync both contact states once after (re)joining so Z2M never shows stale data
-    if (!initialStateReported && (currentMillis - connectedTime > 2000)) {
-      initialStateReported = true;
-      for (auto &in : inputs) reportInput(in);
+    } else if (now - connectedTime > 3000) {
+      digitalWrite(STATUS_LED, HIGH); // Off after 3s — it lives inside a wall box
     }
   }
+#endif
 
-  delay(10);
+  delay(5);
 }
