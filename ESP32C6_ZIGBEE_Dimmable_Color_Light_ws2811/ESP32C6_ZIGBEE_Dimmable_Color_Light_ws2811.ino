@@ -17,6 +17,7 @@ uint8_t currentBrightness = 0;
 CRGB targetColor = CRGB::White; 
 Preferences prefs;
 ZigbeeColorDimmableLight zbLight = ZigbeeColorDimmableLight(11);
+ZigbeeLight zbAntenna = ZigbeeLight(12);  // Z2M-settable antenna: ON = external U.FL, OFF = ceramic
 bool isExternalAntenna = false; // Tracks current antenna mode
 
 // Timer variables
@@ -97,9 +98,25 @@ void setup() {
     }
   });
 
+  // --- ANTENNA SELECTOR (settable from Z2M instead of the BOOT-button triple-click) ---
+  // ON = external (U.FL), OFF = internal (ceramic). Toggling saves + reboots onto the new RF path.
+  zbAntenna.onLightChange([](bool state) {
+    if (state != isExternalAntenna) {        // guard: ignore the boot-time state sync
+      isExternalAntenna = state;
+      prefs.begin("zigbee-cfg", false);
+      prefs.putBool("ext_ant", isExternalAntenna);
+      prefs.putInt("boot_count", 0);
+      prefs.end();
+      Serial.println(isExternalAntenna ? "Z2M -> EXTERNAL antenna, rebooting" : "Z2M -> INTERNAL antenna, rebooting");
+      delay(500);
+      ESP.restart();                          // re-init Zigbee on the new antenna
+    }
+  });
+  Zigbee.addEndpoint(&zbAntenna);
   Zigbee.addEndpoint(&zbLight);
   // Router mode: Hue bridge expects mains-powered lights to act as routers on the mesh.
   Zigbee.begin(ZIGBEE_ROUTER);
+  zbAntenna.setLight(isExternalAntenna);  // reflect current antenna in Z2M
   bootTime = millis();
 }
 
