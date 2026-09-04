@@ -1,79 +1,132 @@
-// External converter: DIY ESP32-C6 2-channel in-wall SCENE / BUTTON module.
-// Deploy to: ~/zigbee2mqtt/data/external_converters/diy_esp32c6_2ch_input.js  (Z2M auto-loads .js there).
+// External converter: DIY ESP32-C6 2-channel in-wall SCENE / BUTTON module (v4).
+// Deploy to: ~/zigbee2mqtt/data/external_converters/diy_esp32c6_2ch_input.js
 //
-// Each wall switch is reported as button ACTIONS (single / double / long),
-// the same as a Hue dimmer or a Modomus scene switch — so HA maps each channel
-// to a Stateless Programmable Switch (Single / Double / Long press) instead of
-// a door/contact sensor.
+// EP10/EP11 = Multistate Input (button actions) + Multistate Output (per-channel mode)
+// EP12       = die temperature (msTemperatureMeasurement) -> device_temperature
+// EP13       = analog input (genAnalogInput)             -> brownout_count
 //
-// Wire protocol: each channel is a Multistate Input endpoint
-//   EP 10 -> button_1, EP 11 -> button_2
-// On a gesture the firmware writes genMultistateInput.presentValue then resets
-// it to 0:  1 = single, 2 = double, 3 = long.
+// Action presentValue: 1 single, 2 double, 3 hold, 4 toggle, 5 on, 6 off  (0 = idle).
+// Mode presentValue (genMultistateOutput): 0 momentary, 1 toggle,
+//                                          2 toggle_directional, 3 toggle_scenes.
 
 const exposes = require('zigbee-herdsman-converters/lib/exposes');
 const e = exposes.presets;
+const ea = exposes.access;
 
-const GESTURE = {1: 'single', 2: 'double', 3: 'hold'};
+const GESTURE = {1: 'single', 2: 'double', 3: 'hold', 4: 'toggle', 5: 'on', 6: 'off'};
+const MODES = ['momentary', 'toggle', 'toggle_directional', 'toggle_scenes'];
 
-// The firmware delivers each report to every coordinator binding, and a
-// double-configure can leave two of them, so the same action can arrive twice
-// a few ms apart. The gesture timing (single needs a 300ms window, double/long
-// are single events) means an IDENTICAL action can never legitimately repeat
-// within ~250ms — so we drop repeats inside that window. Keyed per device+action.
+const ACTIONS = [];
+for (const b of ['button_1', 'button_2'])
+  for (const g of ['single', 'double', 'hold', 'toggle', 'on', 'off']) ACTIONS.push(`${b}_${g}`);
+
+// Same-action reports can arrive twice ms apart (duplicate coordinator binding);
+// the gesture timing means an identical action can't legitimately repeat <250ms.
 const lastAction = new Map();
 const DEDUP_MS = 250;
 
 const fzAction = {
-    cluster: 'genMultistateInput',
-    type: ['attributeReport', 'readResponse'],
-    convert: (model, msg, publish, options, meta) => {
-        const v = msg.data.presentValue;
-        if (v === undefined || v === 0) return;          // 0 = idle reset, ignore
-        const g = GESTURE[v];
-        if (!g) return;
-        const btn = msg.endpoint.ID === 10 ? 'button_1' : 'button_2';
-        const action = `${btn}_${g}`;
-        const key = `${meta.device.ieeeAddr}:${action}`;
-        const now = Date.now();
-        const prev = lastAction.get(key);
-        lastAction.set(key, now);
-        if (prev !== undefined && (now - prev) < DEDUP_MS) return; // duplicate report
-        return {action};
-    },
+  cluster: 'genMultistateInput',
+  type: ['attributeReport', 'readResponse'],
+  convert: (model, msg, publish, options, meta) => {
+    const v = msg.data.presentValue;
+    if (v === undefined || v === 0) return;
+    const g = GESTURE[v];
+    if (!g) return;
+    const btn = msg.endpoint.ID === 10 ? 'button_1' : 'button_2';
+    const action = `${btn}_${g}`;
+    const key = `${meta.device.ieeeAddr}:${action}`;
+    const now = Date.now();
+    const prev = lastAction.get(key);
+    lastAction.set(key, now);
+    if (prev !== undefined && (now - prev) < DEDUP_MS) return;
+    return {action};
+  },
 };
 
-const ACTIONS = [
-    'button_1_single', 'button_1_double', 'button_1_hold',
-    'button_2_single', 'button_2_double', 'button_2_hold',
-];
+const fzMode = {
+  cluster: 'genMultistateOutput',
+  type: ['attributeReport', 'readResponse'],
+  convert: (model, msg) => {
+    const v = msg.data.presentValue;
+    if (v === undefined) return;
+    const ep = msg.endpoint.ID === 10 ? '1' : '2';
+    return {[`mode_${ep}`]: (MODES[v] !== undefined ? MODES[v] : v)};
+  },
+};
+
+const fzTemp = {
+  cluster: 'msTemperatureMeasurement',
+  type: ['attributeReport', 'readResponse'],
+  convert: (model, msg) => {
+    const v = msg.data.measuredValue;
+    if (v === undefined) return;
+    return {device_temperature: Math.round(v / 100)};
+  },
+};
+
+const fzBrownout = {
+  cluster: 'genAnalogInput',
+  type: ['attributeReport', 'readResponse'],
+  convert: (model, msg) => {
+    const v = msg.data.presentValue;
+    if (v === undefined) return;
+    return {brownout_count: Math.round(v)};
+  },
+};
+
+const tzMode = {
+  key: ['mode'],
+  convertSet: async (entity, key, value, meta) => {
+    const idx = MODES.indexOf(value);
+    if (idx < 0) throw new Error(`mode must be one of: ${MODES.join(', ')}`);
+    await entity.write('genMultistateOutput', {presentValue: idx});
+    return {state: {[`mode_${meta.endpoint_name}`]: value}};
+  },
+  convertGet: async (entity, key, meta) => {
+    await entity.read('genMultistateOutput', ['presentValue']);
+  },
+};
 
 module.exports = [
   {
     zigbeeModel: ['ESP32C6-2CH-INPUT'],
     model: 'ESP32C6-2CH-INPUT',
     vendor: 'DIY',
-    description: 'ESP32-C6 mains-powered 2-channel in-wall scene switch (Hue/Modomus-style, single/double/long, Zigbee router)',
-    fromZigbee: [fzAction],
-    toZigbee: [],
-    ota: true,   // firmware carries a Zigbee OTA client (EP10); images served via the OTA override index
-    exposes: [e.action(ACTIONS)],
-    // The firmware sends manual attribute reports, which are delivered to the
-    // cluster's BIND destination — so we must bind genMultistateInput on each
-    // endpoint to the coordinator, or the button presses never arrive.
+    description: 'ESP32-C6 mains-powered 2-channel in-wall scene switch (momentary/toggle, Zigbee router)',
+    fromZigbee: [fzAction, fzMode, fzTemp, fzBrownout],
+    toZigbee: [tzMode],
+    ota: true,
+    exposes: [
+      e.action(ACTIONS),
+      exposes.enum('mode', ea.ALL, MODES).withEndpoint('1')
+        .withDescription('Input 1 behaviour: momentary=single/double/hold; toggle=one action per flip; ' +
+          'toggle_directional=on/off; toggle_scenes=single/double from flip count'),
+      exposes.enum('mode', ea.ALL, MODES).withEndpoint('2')
+        .withDescription('Input 2 behaviour (see input 1)'),
+      e.device_temperature().withDescription('MCU die temperature (diagnostic, not ambient)'),
+      exposes.numeric('brownout_count', ea.STATE).withDescription('Brownout/unexpected resets since flash'),
+    ],
+    endpoint: (device) => ({'1': 10, '2': 11}),
+    meta: {multiEndpoint: true},
     configure: async (device, coordinatorEndpoint) => {
+      // Actions: bind each Multistate Input to the coordinator (manual reports go to binds).
       for (const epId of [10, 11]) {
         const ep = device.getEndpoint(epId);
         if (!ep) continue;
         await ep.bind('genMultistateInput', coordinatorEndpoint);
-        try {
-          await ep.configureReporting('genMultistateInput', [{
-            attribute: 'presentValue',
-            minimumReportInterval: 0,
-            maximumReportInterval: 0,   // manual reports only; no periodic
-            reportableChange: 0,
-          }]);
-        } catch (e) { /* device reports manually; binding alone is enough */ }
+        try { await ep.read('genMultistateOutput', ['presentValue']); } catch (e) { /* mode readback */ }
+      }
+      // Diagnostics: bind temp + analog so their manual reports arrive.
+      const t = device.getEndpoint(12);
+      if (t) {
+        await t.bind('msTemperatureMeasurement', coordinatorEndpoint);
+        try { await t.read('msTemperatureMeasurement', ['measuredValue']); } catch (e) {}
+      }
+      const a = device.getEndpoint(13);
+      if (a) {
+        await a.bind('genAnalogInput', coordinatorEndpoint);
+        try { await a.read('genAnalogInput', ['presentValue']); } catch (e) {}
       }
     },
   },

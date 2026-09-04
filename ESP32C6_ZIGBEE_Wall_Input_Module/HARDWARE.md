@@ -243,4 +243,32 @@ XIAO uses its onboard LED (GPIO15) while the final board drives IO18.
    and **J2-3 (COM)**; second switch between **J2-2** and **COM**.
 4. Power up — LED blinks while pairing, solid 3 s when joined, then off.
    Hold BOOT 5 s to factory-reset/re-pair.
-5. In Home Assistant, automate: `contact_1` *changed* → toggle the Hue lamps.
+5. In Home Assistant, automate on the button **action** (e.g. `button_1_single`
+   or `button_1_toggle`) → toggle the Hue lamps. Set each input's `mode` from
+   the Z2M profile (`momentary` for a push button, `toggle` for a rocker).
+
+## As-built corrections & build notes
+
+These supersede earlier details above, learned bringing up the first two boards:
+
+- **Status LED is on IO7 (module pin 10), active-LOW** — *not* IO18/IO15. On the
+  first PCB run the LED net landed on the UART0-RX pad, which conflicts with
+  serial; it was cut and rewired to **IO7 (pin 10)** on both boards (route it
+  there directly on the next PCB rev). `#define STATUS_LED 7` in firmware.
+- **WT0132C6-S5 symbol pinout was wrong** in the original KiCad symbol (built on
+  ESP-12E numbering), which sent TXD/RXD/IO9 to the wrong castellations and
+  bricked the first boards until bodged. The **footprint pad positions were
+  correct**; the fix was the *symbol* pin-numbering + *Update PCB from Schematic*.
+  Verify the symbol pad-by-pad against the datasheet before ordering.
+- **Use a genuine AMS1117-3.3.** A counterfeit/old part that can't source the
+  Zigbee radio-TX surge browns out on join (regulator stays cool, LQI low,
+  won't stay paired) even though the MCU boots and reads its inputs fine.
+  Confirm by feeding clean bench 3.3 V straight to the module (brownout
+  vanishes, LQI jumps, it joins). A bulk cap at the module does *not* fix it —
+  replace the regulator. Firmware exposes a `brownout_count` so a failing reg
+  in a wall shows up in Z2M without a serial cable.
+- **Inputs are reported as scene-switch *actions*** (single/double/long, plus
+  toggle/on/off), configurable per channel via the Z2M `mode` enum — not as
+  contact sensors. See the README *Firmware behaviour* table.
+- **Updates are wireless after the first flash** — the module carries a Zigbee
+  OTA client; only the initial programming needs the wired J3 header/bodges.
