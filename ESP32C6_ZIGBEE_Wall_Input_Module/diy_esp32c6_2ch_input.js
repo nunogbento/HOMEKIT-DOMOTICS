@@ -10,8 +10,15 @@
 //                                          2 toggle_directional, 3 toggle_scenes.
 
 const exposes = require('zigbee-herdsman-converters/lib/exposes');
+const globalStore = require('zigbee-herdsman-converters/lib/store');
 const e = exposes.presets;
 const ea = exposes.access;
+
+// Die temperature is POLLED, not reported: every Zigbee temp-report path faults the
+// device's zboss build (app reportTemperature() asserts; setReporting / coordinator
+// ConfigureReporting null-deref the stack's zb_zcl_send_report_attr_command). The
+// firmware keeps the attribute fresh with setTemperature(); we read it on a timer.
+const TEMP_POLL_MS = 5 * 60 * 1000;
 
 const GESTURE = {1: 'single', 2: 'double', 3: 'hold', 4: 'toggle', 5: 'on', 6: 'off'};
 const MODES = ['momentary', 'toggle', 'toggle_directional', 'toggle_scenes'];
@@ -55,6 +62,16 @@ const fzMode = {
   },
 };
 
+const fzTemp = {
+  cluster: 'msTemperatureMeasurement',
+  type: ['attributeReport', 'readResponse'],
+  convert: (model, msg) => {
+    const v = msg.data.measuredValue;
+    if (v === undefined) return;
+    return {device_temperature: Math.round(v / 100)};
+  },
+};
+
 const fzBrownout = {
   cluster: 'genAnalogInput',
   type: ['attributeReport', 'readResponse'],
@@ -86,7 +103,7 @@ module.exports = [
     model: 'ESP32C6-2CH-INPUT',
     vendor: 'DIY',
     description: 'ESP32-C6 mains-powered 2-channel in-wall scene switch (momentary/toggle, Zigbee router)',
-    fromZigbee: [fzAction, fzMode, fzBrownout],
+    fromZigbee: [fzAction, fzMode, fzTemp, fzBrownout],
     toZigbee: [tzMode],
     ota: true,
     exposes: [
@@ -97,6 +114,7 @@ module.exports = [
       exposes.enum('mode_2', ea.ALL, MODES)
         .withDescription('Input 2 behaviour (see input 1)'),
       exposes.numeric('brownout_count', ea.STATE).withDescription('Brownout/unexpected resets since flash'),
+      e.device_temperature().withDescription('MCU die temperature (diagnostic, not ambient)'),
     ],
     configure: async (device, coordinatorEndpoint) => {
       // Actions: bind each Multistate Input to the coordinator (manual reports go to binds).
@@ -106,12 +124,36 @@ module.exports = [
         await ep.bind('genMultistateInput', coordinatorEndpoint);
         try { await ep.read('genMultistateOutput', ['presentValue']); } catch (e) { /* mode readback */ }
       }
+      // Die temperature: NEVER bind/configureReporting here — the coordinator's
+      // ConfigureReporting faults the device's stack report path. We POLL instead
+      // (see onEvent). Just do one read so a value appears right after interview.
+      const t = device.getEndpoint(12);
+      if (t) {
+        try { await t.read('msTemperatureMeasurement', ['measuredValue']); } catch (e) { /* first poll fills it */ }
+      }
       // Diagnostics: bind the analog (brownout counter) so its report arrives.
       const a = device.getEndpoint(13);
       if (a) {
         await a.bind('genAnalogInput', coordinatorEndpoint);
         try { await a.read('genAnalogInput', ['presentValue']); } catch (e) {}
       }
+    },
+    // Poll die temperature (report paths crash the device — see header). A timer
+    // reads measuredValue every TEMP_POLL_MS; fzTemp turns the read-response into
+    // device_temperature. Interval is stored per-device and cleared on stop.
+    onEvent: async (type, data, device) => {
+      if (type === 'stop' || type === 'deviceLeave') {
+        const h = globalStore.getValue(device, 'temp_poll');
+        if (h) { clearInterval(h); globalStore.clearValue(device, 'temp_poll'); }
+        return;
+      }
+      if (globalStore.hasValue(device, 'temp_poll')) return;
+      const ep = device.getEndpoint(12);
+      if (!ep) return;
+      const h = setInterval(async () => {
+        try { await ep.read('msTemperatureMeasurement', ['measuredValue']); } catch (e) { /* device asleep/offline */ }
+      }, TEMP_POLL_MS);
+      globalStore.putValue(device, 'temp_poll', h);
     },
   },
 ];

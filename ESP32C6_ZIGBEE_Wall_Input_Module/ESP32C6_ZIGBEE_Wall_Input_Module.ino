@@ -25,12 +25,20 @@
  *   - brownout/reboot counter (esp_reset_reason + NVS) exposed as an analog, so a
  *     unit browning out in a wall reveals itself in Z2M with no serial cable.
  *
- * DO NOT re-add temperatureRead()/ZigbeeTempSensor: on the ESP32-C6 the 802.15.4
- * radio owns the internal temperature-sensor peripheral, so calling temperatureRead()
- * once the radio is up collides with it and hard-faults -> reboot loop (this bit v4).
+ * v7 (0x01000006): re-adds device_temperature (C6 die temp). temperatureRead() is
+ * SAFE with the radio up (bench-verified: 35-37 C, no fault) — it was NOT the v4
+ * crash. The v4 crash was a proactive genAnalogInput REPORT (see brownout note).
+ *
+ * v8 (0x01000007): device_temperature is delivered by POLLING, not reporting.
+ * Every Zigbee temp-REPORT path faults this zboss build — app reportTemperature()
+ * asserts (esp_zigbee_zcl_command.c:263) and stack reporting (setReporting / the
+ * coordinator's ConfigureReporting) null-derefs in zb_zcl_send_report_attr_command
+ * (decoded backtrace, MTVAL=0x3). The firmware only refreshes the attribute with
+ * setTemperature(); the Z2M converter reads it on a timer (read-response works).
  *
  * Transport:
  *   EP10/EP11 = Multistate Input (actions) + Multistate Output (mode) [+OTA on EP10]
+ *   EP12      = Temperature (msTemperatureMeasurement)  -> device_temperature
  *   EP13      = Analog Input (genAnalogInput)          -> brownout_count
  *   Action presentValue codes: 1 single, 2 double, 3 long, 4 toggle, 5 on, 6 off.
  *   Mode  presentValue codes (Multistate Output): 0 momentary, 1 toggle,
@@ -78,6 +86,7 @@
 #define MULTI_WINDOW_MS  300   // Max gap between clicks to count as a multi-click
 #define LONG_PRESS_MS    600   // Hold at least this long = 'long'
 #define ACTION_CLEAR_MS  150   // After firing, reset multistate 0 so repeats re-report
+#define TEMP_UPDATE_MS   60000UL   // Refresh die-temperature attribute every 60s
 #define OTA_VALIDATE_MS  90000UL  // Stay joined this long before confirming a new OTA image
                                   // (a crash-loop never reaches it -> bootloader rolls back)
 
@@ -98,9 +107,10 @@
 #define MODE_COUNT      4
 
 /* --- OTA (Zigbee firmware update over the mesh) --- */
-// Version is 0xMMmmpprr — this build is v1.0.0.5 (v6: v5 + OTA rollback guard).
-#define OTA_FW_RUNNING     0x01000005
-#define OTA_FW_DOWNLOADED  0x01000006
+// Version is 0xMMmmpprr — this build is v1.0.0.7 (v8: device_temperature via POLL,
+// no stack reporting — the reporting send path faults this zboss build).
+#define OTA_FW_RUNNING     0x01000007
+#define OTA_FW_DOWNLOADED  0x01000008
 #define OTA_HW_VERSION     0x0101
 #define OTA_MANUFACTURER   0x1001
 #define OTA_IMAGE_TYPE     0x1011
@@ -108,6 +118,7 @@
 /* --- ZIGBEE ENDPOINTS --- */
 ZigbeeMultistate zbBtn1 = ZigbeeMultistate(10);  // Input=actions ch1, Output=mode ch1, +OTA
 ZigbeeMultistate zbBtn2 = ZigbeeMultistate(11);  // Input=actions ch2, Output=mode ch2
+ZigbeeTempSensor zbTemp = ZigbeeTempSensor(12);  // die temperature (read is radio-safe)
 ZigbeeAnalog     zbDiag = ZigbeeAnalog(13);       // brownout/reboot counter
 
 /* --- PER-INPUT STATE --- */
@@ -262,7 +273,9 @@ void setup() {
   zbBtn1.onMultistateOutputChange(onMode1Change);
   zbBtn2.onMultistateOutputChange(onMode2Change);
 
-  // 5. Diagnostics endpoint (brownout counter only — NO temperature; see header note)
+  // 5. Diagnostics endpoints: die temperature + brownout counter
+  zbTemp.setManufacturerAndModel("DIY", "ESP32C6-2CH-INPUT");
+  zbTemp.setMinMaxValue(-40, 125);
   zbDiag.setManufacturerAndModel("DIY", "ESP32C6-2CH-INPUT");
   zbDiag.addAnalogInput();
   zbDiag.setAnalogInputDescription("Brownout count");
@@ -273,9 +286,18 @@ void setup() {
 
   Zigbee.addEndpoint(&zbBtn1);
   Zigbee.addEndpoint(&zbBtn2);
+  Zigbee.addEndpoint(&zbTemp);
   Zigbee.addEndpoint(&zbDiag);
 
   Zigbee.begin(ZIGBEE_ROUTER);
+
+  // NO stack-side temperature reporting. Both report paths crash this zboss build:
+  // app-level reportTemperature() asserts (esp_zigbee_zcl_command.c:263), and
+  // setReporting()/coordinator ConfigureReporting fault the stack's own send path
+  // (zb_zcl_send_report_attr_command, null-deref, MTVAL=0x3 — decoded backtrace).
+  // Instead the loop just keeps the msTemperatureMeasurement attribute fresh via
+  // setTemperature(); Z2M POLLS it with periodic reads (the read-response path is
+  // the one that works here). See the converter's onEvent poller.
 
   // Reflect the persisted modes back to Z2M so the profile shows the current value.
   zbBtn1.setMultistateOutput(buttons[0].mode);
@@ -356,6 +378,17 @@ void loop() {
     // genAnalogInput report trips a Zigbee stack assertion (esp_zigbee_zcl_command.c:263)
     // -> panic/reboot loop. Z2M reads brownout_count on interview instead.
     zbDiag.setAnalogInput((float)g_brownoutCount);
+  }
+
+  // --- Die temperature: refresh the attribute value every TEMP_UPDATE_MS.
+  //     Do NOT call reportTemperature() — the app-level report_attr_cmd asserts the
+  //     stack (esp_zigbee_zcl_command.c:263), same as the analog one. Z2M's
+  //     configureReporting on msTemperatureMeasurement makes the STACK emit the
+  //     reports (with a proper coordinator destination), so temp still reaches Z2M.
+  static unsigned long lastTempUpdate = 0;
+  if (Zigbee.connected() && (now - lastTempUpdate >= TEMP_UPDATE_MS)) {
+    lastTempUpdate = now;
+    zbTemp.setTemperature(temperatureRead());
   }
 
   // --- 0b. OTA ROLLBACK: confirm this image only after it has proven healthy
