@@ -1,6 +1,11 @@
 #include "Zigbee.h"
 #include <Preferences.h>
-#include "esp_system.h"   // esp_reset_reason()
+#include "esp_system.h"     // esp_reset_reason()
+#include "esp_ota_ops.h"    // OTA rollback: mark-valid / running-partition state
+
+/* OTA ANTI-BRICK ROLLBACK — verifyRollbackLater() is defined below (after the
+ * data types), returning true so the arduino-esp32 core does NOT auto-confirm a
+ * freshly-OTA'd image; loop() confirms it only after a health check. */
 
 /*
  * ESP32-C6 ZIGBEE IN-WALL SCENE / BUTTON MODULE  (v4)
@@ -8,18 +13,24 @@
  * Mains powered (HLK-PM01 -> AMS1117-3.3 -> WT0132C6-S5), joins as a ZIGBEE
  * ROUTER. Two wall inputs reported to Z2M as button ACTIONS.
  *
- * v4 adds:
+ * v6 (0x01000005):
+ *   - OTA anti-brick ROLLBACK: a freshly-OTA'd image is only confirmed after it
+ *     stays joined OTA_VALIDATE_MS; a crash-looping bad OTA auto-reverts to the
+ *     previous good image (see verifyRollbackLater above). v5 (0x01000004, no
+ *     rollback) remains the wired-flashed trusted fallback baseline.
  *   - Per-channel INPUT MODE, configurable from the Z2M profile (written to a
  *     Multistate Output, persisted in NVS): momentary / toggle / toggle_directional
  *     / toggle_scenes. Lets the same unit work with a momentary push button OR a
  *     bi-stable (rocker) toggle switch. Default = momentary (unchanged behaviour).
- *   - device_temperature (C6 die temp) as a diagnostic.
  *   - brownout/reboot counter (esp_reset_reason + NVS) exposed as an analog, so a
  *     unit browning out in a wall reveals itself in Z2M with no serial cable.
  *
+ * DO NOT re-add temperatureRead()/ZigbeeTempSensor: on the ESP32-C6 the 802.15.4
+ * radio owns the internal temperature-sensor peripheral, so calling temperatureRead()
+ * once the radio is up collides with it and hard-faults -> reboot loop (this bit v4).
+ *
  * Transport:
  *   EP10/EP11 = Multistate Input (actions) + Multistate Output (mode) [+OTA on EP10]
- *   EP12      = Temperature (msTemperatureMeasurement) -> device_temperature
  *   EP13      = Analog Input (genAnalogInput)          -> brownout_count
  *   Action presentValue codes: 1 single, 2 double, 3 long, 4 toggle, 5 on, 6 off.
  *   Mode  presentValue codes (Multistate Output): 0 momentary, 1 toggle,
@@ -67,7 +78,8 @@
 #define MULTI_WINDOW_MS  300   // Max gap between clicks to count as a multi-click
 #define LONG_PRESS_MS    600   // Hold at least this long = 'long'
 #define ACTION_CLEAR_MS  150   // After firing, reset multistate 0 so repeats re-report
-#define TEMP_REPORT_MS   300000UL  // Report die temperature every 5 min
+#define OTA_VALIDATE_MS  90000UL  // Stay joined this long before confirming a new OTA image
+                                  // (a crash-loop never reaches it -> bootloader rolls back)
 
 /* --- Action codes reported on genMultistateInput presentValue --- */
 #define ACT_IDLE   0
@@ -86,9 +98,9 @@
 #define MODE_COUNT      4
 
 /* --- OTA (Zigbee firmware update over the mesh) --- */
-// Version is 0xMMmmpprr — this build is v1.0.0.3 (v4: modes + telemetry).
-#define OTA_FW_RUNNING     0x01000003
-#define OTA_FW_DOWNLOADED  0x01000004
+// Version is 0xMMmmpprr — this build is v1.0.0.5 (v6: v5 + OTA rollback guard).
+#define OTA_FW_RUNNING     0x01000005
+#define OTA_FW_DOWNLOADED  0x01000006
 #define OTA_HW_VERSION     0x0101
 #define OTA_MANUFACTURER   0x1001
 #define OTA_IMAGE_TYPE     0x1011
@@ -96,7 +108,6 @@
 /* --- ZIGBEE ENDPOINTS --- */
 ZigbeeMultistate zbBtn1 = ZigbeeMultistate(10);  // Input=actions ch1, Output=mode ch1, +OTA
 ZigbeeMultistate zbBtn2 = ZigbeeMultistate(11);  // Input=actions ch2, Output=mode ch2
-ZigbeeTempSensor zbTemp = ZigbeeTempSensor(12);  // die temperature
 ZigbeeAnalog     zbDiag = ZigbeeAnalog(13);       // brownout/reboot counter
 
 /* --- PER-INPUT STATE --- */
@@ -124,7 +135,6 @@ Preferences prefs;
 
 // Diagnostics captured at boot
 uint32_t g_brownoutCount = 0;
-unsigned long lastTempReport = 0;
 bool diagReported = false;
 
 // Factory-reset button (IO9 / BOOT) tracking
@@ -201,6 +211,12 @@ void fireAction(Button &b, uint8_t code) {
   }
 }
 
+/* OTA rollback hook: return true so the core leaves a freshly-OTA'd image
+ * PENDING_VERIFY; loop() confirms it after OTA_VALIDATE_MS of healthy uptime. */
+extern "C" bool verifyRollbackLater() {
+  return true;
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -246,9 +262,7 @@ void setup() {
   zbBtn1.onMultistateOutputChange(onMode1Change);
   zbBtn2.onMultistateOutputChange(onMode2Change);
 
-  // 5. Diagnostics endpoints
-  zbTemp.setManufacturerAndModel("DIY", "ESP32C6-2CH-INPUT");
-  zbTemp.setMinMaxValue(-40, 125);
+  // 5. Diagnostics endpoint (brownout counter only — NO temperature; see header note)
   zbDiag.setManufacturerAndModel("DIY", "ESP32C6-2CH-INPUT");
   zbDiag.addAnalogInput();
   zbDiag.setAnalogInputDescription("Brownout count");
@@ -259,7 +273,6 @@ void setup() {
 
   Zigbee.addEndpoint(&zbBtn1);
   Zigbee.addEndpoint(&zbBtn2);
-  Zigbee.addEndpoint(&zbTemp);
   Zigbee.addEndpoint(&zbDiag);
 
   Zigbee.begin(ZIGBEE_ROUTER);
@@ -339,24 +352,31 @@ void loop() {
   }
   if (!diagReported && Zigbee.connected() && (now > 4000)) {
     diagReported = true;
+    // Set the attribute value only. Do NOT call reportAnalogInput(): a proactive
+    // genAnalogInput report trips a Zigbee stack assertion (esp_zigbee_zcl_command.c:263)
+    // -> panic/reboot loop. Z2M reads brownout_count on interview instead.
     zbDiag.setAnalogInput((float)g_brownoutCount);
-    zbDiag.reportAnalogInput();
-    zbTemp.setTemperature(temperatureRead());
-    zbTemp.reportTemperature();
-    lastTempReport = now;
+  }
+
+  // --- 0b. OTA ROLLBACK: confirm this image only after it has proven healthy
+  //     (joined + stayed up OTA_VALIDATE_MS). A crash-loop never reaches here, so
+  //     the bootloader auto-reverts to the previous good image. Note: an UNPLANNED
+  //     reboot (incl. a power blip) during this window also reverts — keep it short.
+  static bool imgValidated = false;
+  if (!imgValidated && Zigbee.connected() && now > OTA_VALIDATE_MS) {
+    imgValidated = true;
+    const esp_partition_t *run = esp_ota_get_running_partition();
+    esp_ota_img_states_t st;
+    if (esp_ota_get_state_partition(run, &st) == ESP_OK && st == ESP_OTA_IMG_PENDING_VERIFY) {
+      esp_ota_mark_app_valid_cancel_rollback();
+      Serial.println("OTA image confirmed healthy (rollback cancelled)");
+    }
   }
 
   // --- 1. INPUTS ---
   for (auto &b : buttons) serviceButton(b, now);
 
-  // --- 2. Periodic die-temperature report ---
-  if (diagReported && (now - lastTempReport) >= TEMP_REPORT_MS) {
-    lastTempReport = now;
-    zbTemp.setTemperature(temperatureRead());
-    zbTemp.reportTemperature();
-  }
-
-  // --- 3. FACTORY-RESET BUTTON (IO9 / BOOT) ---
+  // --- 2. FACTORY-RESET BUTTON (IO9 / BOOT) ---
   bool currentButtonState = digitalRead(BUTTON_PIN);
   if (lastButtonState == HIGH && currentButtonState == LOW) {
 #ifdef HAS_RF_SWITCH

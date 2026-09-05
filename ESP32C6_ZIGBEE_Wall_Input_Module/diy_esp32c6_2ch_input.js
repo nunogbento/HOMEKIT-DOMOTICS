@@ -55,16 +55,6 @@ const fzMode = {
   },
 };
 
-const fzTemp = {
-  cluster: 'msTemperatureMeasurement',
-  type: ['attributeReport', 'readResponse'],
-  convert: (model, msg) => {
-    const v = msg.data.measuredValue;
-    if (v === undefined) return;
-    return {device_temperature: Math.round(v / 100)};
-  },
-};
-
 const fzBrownout = {
   cluster: 'genAnalogInput',
   type: ['attributeReport', 'readResponse'],
@@ -76,15 +66,17 @@ const fzBrownout = {
 };
 
 const tzMode = {
-  key: ['mode'],
+  key: ['mode_1', 'mode_2'],
   convertSet: async (entity, key, value, meta) => {
     const idx = MODES.indexOf(value);
     if (idx < 0) throw new Error(`mode must be one of: ${MODES.join(', ')}`);
-    await entity.write('genMultistateOutput', {presentValue: idx});
-    return {state: {[`mode_${meta.endpoint_name}`]: value}};
+    const ep = meta.device.getEndpoint(key === 'mode_1' ? 10 : 11);
+    await ep.write('genMultistateOutput', {presentValue: idx});
+    return {state: {[key]: value}};
   },
   convertGet: async (entity, key, meta) => {
-    await entity.read('genMultistateOutput', ['presentValue']);
+    const ep = meta.device.getEndpoint(key === 'mode_1' ? 10 : 11);
+    await ep.read('genMultistateOutput', ['presentValue']);
   },
 };
 
@@ -94,21 +86,18 @@ module.exports = [
     model: 'ESP32C6-2CH-INPUT',
     vendor: 'DIY',
     description: 'ESP32-C6 mains-powered 2-channel in-wall scene switch (momentary/toggle, Zigbee router)',
-    fromZigbee: [fzAction, fzMode, fzTemp, fzBrownout],
+    fromZigbee: [fzAction, fzMode, fzBrownout],
     toZigbee: [tzMode],
     ota: true,
     exposes: [
       e.action(ACTIONS),
-      exposes.enum('mode', ea.ALL, MODES).withEndpoint('1')
+      exposes.enum('mode_1', ea.ALL, MODES)
         .withDescription('Input 1 behaviour: momentary=single/double/hold; toggle=one action per flip; ' +
           'toggle_directional=on/off; toggle_scenes=single/double from flip count'),
-      exposes.enum('mode', ea.ALL, MODES).withEndpoint('2')
+      exposes.enum('mode_2', ea.ALL, MODES)
         .withDescription('Input 2 behaviour (see input 1)'),
-      e.device_temperature().withDescription('MCU die temperature (diagnostic, not ambient)'),
       exposes.numeric('brownout_count', ea.STATE).withDescription('Brownout/unexpected resets since flash'),
     ],
-    endpoint: (device) => ({'1': 10, '2': 11}),
-    meta: {multiEndpoint: true},
     configure: async (device, coordinatorEndpoint) => {
       // Actions: bind each Multistate Input to the coordinator (manual reports go to binds).
       for (const epId of [10, 11]) {
@@ -117,12 +106,7 @@ module.exports = [
         await ep.bind('genMultistateInput', coordinatorEndpoint);
         try { await ep.read('genMultistateOutput', ['presentValue']); } catch (e) { /* mode readback */ }
       }
-      // Diagnostics: bind temp + analog so their manual reports arrive.
-      const t = device.getEndpoint(12);
-      if (t) {
-        await t.bind('msTemperatureMeasurement', coordinatorEndpoint);
-        try { await t.read('msTemperatureMeasurement', ['measuredValue']); } catch (e) {}
-      }
+      // Diagnostics: bind the analog (brownout counter) so its report arrives.
       const a = device.getEndpoint(13);
       if (a) {
         await a.bind('genAnalogInput', coordinatorEndpoint);
