@@ -46,13 +46,17 @@ writable live from the Z2M UI and persisted in NVS.
 Actions arrive as `button_{1,2}_{single,double,hold,toggle,on,off}`.
 
 **Diagnostics** (Z2M, diagnostic category):
-- `device_temperature` — MCU die temp (health/overheat trend, not accurate ambient).
+- `device_temperature` — MCU die temp (health/overheat trend, not accurate
+  ambient). **Polled** by the converter (a read every ~5 min), not reported:
+  every Zigbee attribute-*report* path crashes this ESP-Zigbee build, so the
+  firmware only refreshes the value and Z2M reads it. See the sketch header.
 - `brownout_count` — increments on a brownout/unexpected reset, so a unit
   browning out in a wall reveals itself remotely with no serial cable.
 
 **Zigbee OTA** — the module carries an OTA client, so after the first (wired)
-flash every future update is wireless via Z2M's OTA override index. See
-[FABRICATION.md](FABRICATION.md)/the converter for the image + index recipe.
+flash every future update is wireless via Z2M's OTA override index, and images
+are **rollback-guarded** (a bad boot reverts automatically). See
+[ota/README.md](ota/README.md) for the full build → deploy → update process.
 
 ## Status
 
@@ -60,9 +64,10 @@ flash every future update is wireless via Z2M's OTA override index. See
 |---|---|
 | Schematic | ✅ Complete, ERC-clean (KiCad 10); WT0132C6-S5 symbol pinout corrected |
 | PCB layout | ✅ Routed, DRC-clean — 45 × 36 mm, 2-layer (status LED on IO7 / pin 10) |
-| Firmware | ✅ v4 — scene-switch actions, per-channel modes, OTA, temp + brownout telemetry |
-| Z2M converter | ✅ External converter (actions + mode enums + diagnostics) |
-| Fabrication | 📦 Gerbers exported; **two boards hand-built and running on mains** |
+| Firmware | ✅ v8 (`0x01000007`) — scene-switch actions, per-channel modes, rollback-guarded OTA, polled temp + brownout telemetry |
+| Z2M converter | ✅ External converter (actions + mode enums + diagnostics; temp polled) |
+| Fabrication | 📦 Gerbers exported; **both boards hand-built, on mains, on v8, validated (buttons + modes + temp + brownout), ready to install** |
+| OTA proven | ✅ Board 1 updated in-wall v3→v8 over the mesh (rollback-guarded) |
 
 > **Regulator note:** use a *genuine* AMS1117-3.3. A counterfeit part that
 > can't source the radio-TX surge causes brownouts on join (cool reg, low LQI,
@@ -78,6 +83,7 @@ flash every future update is wireless via Z2M's OTA override index. See
 | [`ASSEMBLY.md`](ASSEMBLY.md) | Hand-assembly guide: part IDs/markings, build order, staged bring-up tests |
 | [`FABRICATION.md`](FABRICATION.md) | JLCPCB order settings + gerber package |
 | [`diy_esp32c6_2ch_input.js`](diy_esp32c6_2ch_input.js) | Zigbee2MQTT external converter (actions, per-channel mode enums, temp + brownout diagnostics, OTA) |
+| [`ota/`](ota/) | Zigbee OTA: `make_ota.py` image builder, current `index.json` + `.ota` (mirrors the Pi's `ota_override/`), and [`ota/README.md`](ota/README.md) — the full update process |
 | [`circuit/`](circuit/) | KiCad 10 project — schematic, board, custom WT0132C6-S5 library, gerbers (`fab/`) |
 | [`docs/`](docs/) | Rendered board + schematic images |
 

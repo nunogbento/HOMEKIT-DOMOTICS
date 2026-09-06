@@ -64,7 +64,7 @@ def main():
     ap.add_argument("--header-string", default="ESP32C6-2CH-INPUT")
     ap.add_argument("--model-id", default="ESP32C6-2CH-INPUT")
     ap.add_argument("--index", default="index.json")
-    ap.add_argument("--url-base", default="/app/data/ota", help="dir (as Z2M sees it) that will hold the .ota; used to build the index 'url'")
+    ap.add_argument("--url-base", default="ota_override", help="dir (relative to the Z2M data dir) that holds the .ota; used to build the index 'url'. The deployed setup uses 'ota_override' (matches zigbee_ota_override_index_location).")
     a = ap.parse_args()
 
     manuf = int(a.manuf, 0); image_type = int(a.image_type, 0); version = int(a.version, 0)
@@ -74,7 +74,8 @@ def main():
 
     ota = build_ota(app, manuf, image_type, version, a.header_string)
     os.makedirs(a.out_dir, exist_ok=True)
-    fname = f"{a.model_id}_v{ver_str(version)}_0x{version:08x}.ota"
+    # short name matching the deployed ota_override/ files, e.g. ESP32C6-2CH-INPUT_v0x01000007.ota
+    fname = f"{a.model_id}_v0x{version:08x}.ota"
     fpath = os.path.join(a.out_dir, fname)
     open(fpath, "wb").write(ota)
     sha = hashlib.sha512(ota).hexdigest()
