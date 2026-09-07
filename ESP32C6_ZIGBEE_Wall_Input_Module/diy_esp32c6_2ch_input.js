@@ -142,6 +142,14 @@ module.exports = [
     // reads measuredValue every TEMP_POLL_MS; fzTemp turns the read-response into
     // device_temperature. Interval is stored per-device and cleared on stop.
     onEvent: async (type, data, device) => {
+      // Z2M dispatches some events (notably 'deviceInterview') with no resolved
+      // device object. globalStore.getEntityKey() then does isGroup(undefined) ->
+      // undefined.constructor -> TypeError, surfacing as
+      //   error: z2m: EventBus error 'OnEvent/deviceInterview':
+      //          Cannot read properties of undefined (reading 'constructor')
+      // once per interview start + finish. Harmless (the interview still
+      // completes) but it is the only error this device logs, so guard it.
+      if (!device) return;
       if (type === 'stop' || type === 'deviceLeave') {
         const h = globalStore.getValue(device, 'temp_poll');
         if (h) { clearInterval(h); globalStore.clearValue(device, 'temp_poll'); }
