@@ -221,34 +221,45 @@ const writeEp = async (meta, epId, cluster, payload, what) => {
 
 const tzAc = {
   key: ['system_mode', 'occupied_cooling_setpoint', 'fan_mode', 'swing'],
+  /* Z2M calls a toZigbee converter ONCE per payload, not once per key, and skips
+   * it for the remaining keys it owns — the same contract tz.light_onoff_brightness
+   * relies on to handle state+brightness together. HA sets mode, temperature and
+   * fan in a single service call, so read them all off meta.message; handling only
+   * the `key` argument silently dropped everything but the first. Setpoint and fan
+   * go out before the mode so the coalesced IR frame already carries them. */
   convertSet: async (entity, key, value, meta) => {
-    switch (key) {
-      case 'system_mode': {
-        const idx = AC_MODES.indexOf(String(value).toLowerCase());
-        if (idx < 0) throw new Error(`system_mode must be one of: ${AC_MODES.join(', ')}`);
-        await writeEp(meta, EP.acMode, 'genMultistateOutput', {presentValue: idx}, 'AC mode');
-        return {state: {system_mode: AC_MODES[idx]}};
-      }
-      case 'occupied_cooling_setpoint': {
-        const t = Number(value);
-        if (!(t >= 16 && t <= 30)) throw new Error('setpoint must be 16..30 C');
-        await writeEp(meta, EP.acTemp, 'genAnalogOutput', {presentValue: t}, 'AC setpoint');
-        return {state: {occupied_cooling_setpoint: t}};
-      }
-      case 'fan_mode': {
-        const wanted = String(value).toLowerCase();
-        const num = Object.keys(FAN_MODES).find((k) => FAN_MODES[k] === wanted);
-        if (num === undefined) throw new Error(`fan_mode must be one of: ${FAN_MODES_EXPOSED.join(', ')}`);
-        await writeEp(meta, EP.acFan, 'hvacFanCtrl', {fanMode: Number(num)}, 'AC fan');
-        return {state: {fan_mode: wanted}};
-      }
-      case 'swing': {
-        const on = String(value).toUpperCase() === 'ON' || value === true;
-        await writeEp(meta, EP.acSwing, 'genBinaryOutput', {presentValue: on ? 1 : 0}, 'AC swing');
-        return {state: {swing: on ? 'ON' : 'OFF'}};
-      }
-      default: return;
+    const msg = (meta && meta.message) || {[key]: value};
+    const state = {};
+
+    if (msg.occupied_cooling_setpoint !== undefined) {
+      const t = Number(msg.occupied_cooling_setpoint);
+      if (!(t >= 16 && t <= 30)) throw new Error('setpoint must be 16..30 C');
+      await writeEp(meta, EP.acTemp, 'genAnalogOutput', {presentValue: t}, 'AC setpoint');
+      state.occupied_cooling_setpoint = t;
     }
+
+    if (msg.fan_mode !== undefined) {
+      const wanted = String(msg.fan_mode).toLowerCase();
+      const num = Object.keys(FAN_MODES).find((k) => FAN_MODES[k] === wanted);
+      if (num === undefined) throw new Error(`fan_mode must be one of: ${FAN_MODES_EXPOSED.join(', ')}`);
+      await writeEp(meta, EP.acFan, 'hvacFanCtrl', {fanMode: Number(num)}, 'AC fan');
+      state.fan_mode = wanted;
+    }
+
+    if (msg.swing !== undefined) {
+      const on = String(msg.swing).toUpperCase() === 'ON' || msg.swing === true;
+      await writeEp(meta, EP.acSwing, 'genBinaryOutput', {presentValue: on ? 1 : 0}, 'AC swing');
+      state.swing = on ? 'ON' : 'OFF';
+    }
+
+    if (msg.system_mode !== undefined) {
+      const idx = AC_MODES.indexOf(String(msg.system_mode).toLowerCase());
+      if (idx < 0) throw new Error(`system_mode must be one of: ${AC_MODES.join(', ')}`);
+      await writeEp(meta, EP.acMode, 'genMultistateOutput', {presentValue: idx}, 'AC mode');
+      state.system_mode = AC_MODES[idx];
+    }
+
+    return {state};
   },
   convertGet: async (entity, key, meta) => {
     const map = {
