@@ -40,9 +40,22 @@ const DIE_TEMP_TICKS = 5;    // 5 min
 const ROOM_TICKS = 3;        // 3 min (firmware refreshes the AM2320 every 2 min)
 const DIAG_TICKS = 30;       // 30 min — only changes on a brownout
 
-const hasEp = (device, id) => !!(device && device.getEndpoint(id));
+// exposes() is called from Z2M's resolveDevicesDefinitions() as well as for real
+// devices, and not every caller passes a zigbee-herdsman Device — some pass an
+// object with no getEndpoint(). Calling it blind throws
+// "device.getEndpoint is not a function", and because loadJS() re-resolves ALL
+// definitions after registering each converter, one throwing definition gets
+// every converter loaded after it renamed to .invalid as well. So: only probe
+// endpoints on something that actually quacks like a Device, and fall back to
+// advertising the full set when we cannot tell.
+const asDevice = (device) => (device && typeof device.getEndpoint === 'function' ? device : null);
+const hasEp = (device, id) => {
+  const d = asDevice(device);
+  return d ? !!d.getEndpoint(id) : true;   // unknown -> assume present
+};
 const isCct = (device, id) => {
-  const ep = device && device.getEndpoint(id);
+  const d = asDevice(device);
+  const ep = d && d.getEndpoint(id);
   return !!(ep && ep.supportsInputCluster && ep.supportsInputCluster('lightingColorCtrl'));
 };
 
@@ -129,7 +142,7 @@ module.exports = [
       // A light per channel endpoint that exists, colour-temperature capable
       // when the firmware declared lightingColorCtrl on it.
       for (const [name, id] of LIGHT_EPS) {
-        if (device && !hasEp(device, id)) continue;
+        if (!hasEp(device, id)) continue;
         list.push(isCct(device, id)
           ? e.light_brightness_colortemp([153, 500]).withEndpoint(name)
           : e.light_brightness().withEndpoint(name));
@@ -142,7 +155,7 @@ module.exports = [
         .withDescription('Brownout/unexpected resets since flash'));
       list.push(e.device_temperature().withDescription('MCU die temperature (diagnostic, not ambient)'));
       // Room sensor only on boards where the AM2320 was auto-detected.
-      if (!device || hasEp(device, EP.room)) {
+      if (hasEp(device, EP.room)) {
         list.push(e.temperature(), e.humidity());
       }
       return list;
@@ -165,10 +178,15 @@ module.exports = [
       await readSafe(EP.room, 'msTemperatureMeasurement', ['measuredValue']);
       await readSafe(EP.room, 'msRelativeHumidity', ['measuredValue']);
     },
-    onEvent: async (type, data, device) => {
-      // Z2M dispatches some events (notably 'deviceInterview') with no resolved
-      // device object; globalStore then does isGroup(undefined) ->
-      // undefined.constructor -> TypeError. Same guard as the wall module.
+    /* Z2M >= 2.x calls onEvent({type, data:{device, state, options, ...}}) — a
+     * SINGLE object. The legacy signature was (type, data, device), so reading
+     * the 3rd argument yields undefined on every event and any poller guarded on
+     * it silently never starts (and, unguarded, globalStore throws
+     * "Cannot read properties of undefined (reading 'constructor')" — that is
+     * what the OnEvent/deviceInterview EventBus errors were). Accept both. */
+    onEvent: async (a, b, c) => {
+      const type = typeof a === 'string' ? a : a?.type;
+      const device = typeof a === 'string' ? c : a?.data?.device;
       if (!device) return;
       if (type === 'stop' || type === 'deviceLeave') {
         const h = globalStore.getValue(device, 'poll');

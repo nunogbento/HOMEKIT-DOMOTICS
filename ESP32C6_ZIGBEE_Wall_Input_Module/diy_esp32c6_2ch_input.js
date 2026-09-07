@@ -141,14 +141,15 @@ module.exports = [
     // Poll die temperature (report paths crash the device — see header). A timer
     // reads measuredValue every TEMP_POLL_MS; fzTemp turns the read-response into
     // device_temperature. Interval is stored per-device and cleared on stop.
-    onEvent: async (type, data, device) => {
-      // Z2M dispatches some events (notably 'deviceInterview') with no resolved
-      // device object. globalStore.getEntityKey() then does isGroup(undefined) ->
-      // undefined.constructor -> TypeError, surfacing as
-      //   error: z2m: EventBus error 'OnEvent/deviceInterview':
-      //          Cannot read properties of undefined (reading 'constructor')
-      // once per interview start + finish. Harmless (the interview still
-      // completes) but it is the only error this device logs, so guard it.
+    /* Z2M >= 2.x calls onEvent({type, data:{device, state, options, ...}}) — a
+     * SINGLE object. The legacy signature was (type, data, device), so reading
+     * the 3rd argument yields undefined on every event and any poller guarded on
+     * it silently never starts (and, unguarded, globalStore throws
+     * "Cannot read properties of undefined (reading 'constructor')" — that is
+     * what the OnEvent/deviceInterview EventBus errors were). Accept both. */
+    onEvent: async (a, b, c) => {
+      const type = typeof a === 'string' ? a : a?.type;
+      const device = typeof a === 'string' ? c : a?.data?.device;
       if (!device) return;
       if (type === 'stop' || type === 'deviceLeave') {
         const h = globalStore.getValue(device, 'temp_poll');

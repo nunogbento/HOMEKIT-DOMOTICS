@@ -80,6 +80,16 @@ static const uint8_t CH_PIN[4] = { 6, 5, 4, 2 };  // CH1..CH4
 #define DIE_TEMP_PERIOD_MS    60000UL
 #define AM2320_PERIOD_MS      120000UL  // matches the HomeKit firmware's 2 min cadence
 #define AM2320_ADDR           0x5C
+/* The AM2320 needs ~2 s after power-up before it answers at all, so a probe run
+ * the instant we boot reports "absent" on a board that has one — and EP20 is
+ * decided at boot, so that mistake sticks until the next reboot + re-interview.
+ * Probe across a window wider than the sensor's wake time. */
+#define AM2320_PROBE_ATTEMPTS 8
+#define AM2320_PROBE_GAP_MS   400
+/* A profile write must be ACKNOWLEDGED before we reboot: rebooting inside the
+ * ZCL callback means the stack never sends the write response and the
+ * coordinator logs the write as failed even though it succeeded. */
+#define PROFILE_REBOOT_DELAY_MS 2500UL
 
 /* OTA identity. NOTE image type 0x1012 — distinct from the wall-input module's
  * 0x1011 so the two DIY devices never see each other's images in the Z2M
@@ -109,11 +119,26 @@ static const char *PROFILE_NAME[PROFILE_COUNT] = {
   "4XDIM", "CCT_2DIM", "2XCCT", "RGBW", "RGB_DIM"
 };
 
+/* Which profiles this build can actually run. Extend as the phases land
+ * (phase 2 adds CCT_2DIM). A write of anything else is REJECTED rather than
+ * stored: accepting it would reboot the board into a profile it cannot honour
+ * and leave Z2M showing a profile the device isn't running. */
+static bool profileImplemented(uint16_t p) {
+  return p == PROFILE_4XDIM;
+}
+
 static Profile   g_profile        = PROFILE_4XDIM;   // effective (what is running)
 static uint16_t  g_profileStored  = PROFILE_4XDIM;   // what NVS says
 static uint32_t  g_brownoutCount  = 0;
 static bool      g_haveAM2320     = false;
 static bool      g_imgValidated   = false;
+static bool      g_rebootPending  = false;
+static unsigned long g_rebootAt   = 0;
+/* setMultistateOutput() re-enters onMultistateOutputChange(), so "bouncing" the
+ * attribute back to the running profile re-triggers the handler. If the stored
+ * profile is itself unimplemented that becomes an endless reject/bounce loop
+ * (observed on the bench). One-shot flag to swallow our own echo. */
+static bool      g_profileEcho    = false;
 
 Preferences prefs;
 
@@ -166,9 +191,24 @@ static void onCh4(bool s, uint8_t l) { onCh(3, s, l); }
 /* ============================================================
  *  PROFILE SELECTOR (EP14)
  * ============================================================ */
+/* Put the attribute back to what the device is really running, so the Z2M UI
+ * cannot show a profile the firmware isn't honouring. */
+static void bounceProfileAttr() {
+  g_profileEcho = true;
+  zbCfg.setMultistateOutput(g_profileStored);
+}
+
 static void onProfileWrite(uint16_t state) {
+  if (g_profileEcho) { g_profileEcho = false; return; }   // our own bounce, not a user write
   if (state >= PROFILE_COUNT) {
     Serial.printf("Profile %u out of range, ignored\n", state);
+    bounceProfileAttr();
+    return;
+  }
+  if (!profileImplemented(state)) {
+    Serial.printf("Profile %s not implemented in this build — REJECTED (still %s)\n",
+                  PROFILE_NAME[state], PROFILE_NAME[g_profileStored]);
+    bounceProfileAttr();
     return;
   }
   if (state == g_profileStored) return;
@@ -178,13 +218,15 @@ static void onProfileWrite(uint16_t state) {
   prefs.end();
   g_profileStored = state;
 
-  /* The endpoint composition is fixed at interview time, so a profile change
-   * only takes effect after a reboot — and Z2M must re-interview the device
-   * afterwards to pick up the new endpoints. */
-  Serial.printf("Profile -> %s, rebooting to apply (re-interview in Z2M after)\n",
-                PROFILE_NAME[state]);
-  delay(250);
-  ESP.restart();
+  /* Endpoint composition is fixed at interview time, so a profile change only
+   * takes effect after a reboot — and Z2M must re-interview afterwards to pick
+   * up the new endpoints. Defer the restart to loop() so the stack can finish
+   * answering this write first; rebooting from inside the callback makes the
+   * coordinator log a perfectly good write as a timeout. */
+  g_rebootAt = millis() + PROFILE_REBOOT_DELAY_MS;
+  g_rebootPending = true;
+  Serial.printf("Profile -> %s, rebooting in %lu ms (re-interview in Z2M after)\n",
+                PROFILE_NAME[state], PROFILE_REBOOT_DELAY_MS);
 }
 
 /* ============================================================
@@ -205,13 +247,13 @@ static uint16_t crc16Modbus(const uint8_t *buf, uint8_t len) {
 /* The AM2320 sleeps between reads and NAKs the wake-up transaction, so a single
  * probe is not conclusive: wake, pause, then see whether it ACKs. */
 static bool am2320Probe() {
-  for (uint8_t attempt = 0; attempt < 3; attempt++) {
+  for (uint8_t attempt = 0; attempt < AM2320_PROBE_ATTEMPTS; attempt++) {
     Wire.beginTransmission(AM2320_ADDR);
     Wire.endTransmission();          // wake-up (expected to NAK)
     delay(3);
     Wire.beginTransmission(AM2320_ADDR);
     if (Wire.endTransmission() == 0) return true;
-    delay(50);
+    delay(AM2320_PROBE_GAP_MS);
   }
   return false;
 }
@@ -282,12 +324,18 @@ void setup() {
   prefs.end();
 
   g_profile = (Profile)g_profileStored;
-  if (g_profile != PROFILE_4XDIM) {
-    // Phase 1 only implements 4XDIM. Never brick a board over a config value:
-    // run the profile we can and say so.
-    Serial.printf("Profile %s not implemented in this build — running 4XDIM\n",
+  if (g_profileStored >= PROFILE_COUNT || !profileImplemented(g_profileStored)) {
+    // Never brick a board over a config value: run what we can, and SELF-HEAL the
+    // stored value so it always names a runnable profile. Without this, a stored
+    // profile this build can't honour makes the reject/bounce path fight itself
+    // and leaves Z2M advertising a profile the device isn't running.
+    Serial.printf("Stored profile %s not implemented in this build — falling back to 4XDIM and correcting NVS\n",
                   g_profileStored < PROFILE_COUNT ? PROFILE_NAME[g_profileStored] : "?");
     g_profile = PROFILE_4XDIM;
+    g_profileStored = PROFILE_4XDIM;
+    prefs.begin("macfg", false);
+    prefs.putUShort("profile", PROFILE_4XDIM);
+    prefs.end();
   }
   Serial.printf("Boot: reset_reason=%d brownout_count=%u profile=%s(stored %u)\n",
                 (int)rr, g_brownoutCount, PROFILE_NAME[g_profile], g_profileStored);
@@ -296,11 +344,14 @@ void setup() {
   //    "has a sensor" never has to be configured.
   Wire.begin(SDA_PIN, SCL_PIN);
   g_haveAM2320 = am2320Probe();
-  Serial.printf("AM2320: %s\n", g_haveAM2320 ? "detected -> EP20" : "absent");
+  Serial.printf("AM2320: %s\n", g_haveAM2320
+    ? "detected -> EP20"
+    : "absent (EP20 omitted; if a sensor is fitted, reboot + re-interview in Z2M)");
 
   // 4. Light endpoints, one per channel (4XDIM)
   for (uint8_t i = 0; i < 4; i++) {
     zbCh[i]->setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
+    zbCh[i]->setPowerSource(ZB_POWER_SOURCE_MAINS);   // it is a mains-powered router
   }
   zbCh1.onLightChange(onCh1);
   zbCh2.onLightChange(onCh2);
@@ -368,6 +419,13 @@ void setup() {
 
 void loop() {
   const unsigned long now = millis();
+
+  // Deferred profile reboot — see onProfileWrite().
+  if (g_rebootPending && (long)(now - g_rebootAt) >= 0) {
+    Serial.println("Applying new profile now");
+    delay(50);
+    ESP.restart();
+  }
 
   // Factory reset: hold the control pin (IO9) for FACTORY_RESET_HOLD_MS.
   static unsigned long holdStart = 0;
