@@ -87,10 +87,12 @@
  *
  * That order is deliberate — it matches the pad order of a standard RGBW strip,
  * so a strip solders straight across with no crossed wires. THE SILKSCREEN IS
- * AUTHORITATIVE. (The RGB defines in the legacy HomeSpan Configuration.h —
- * WHITE=2, RED=4, GREEN=5, BLUE=6 — disagree on three of four; no RGBW board is
- * live any more, so those were renumbered for the C6 and never exercised. Its
- * CCT/dimmer defines ARE proven, and are kept below.)
+ * AUTHORITATIVE, and this map was **CONFIRMED ON THE HARDWARE 2026-09-07** with a
+ * channel walk (each channel blinked its own number: 1=W, 2=B, 3=R, 4=G).
+ * (The RGB defines in the legacy HomeSpan Configuration.h — WHITE=2, RED=4,
+ * GREEN=5, BLUE=6 — disagree on three of four; no RGBW board is live any more, so
+ * those were renumbered for the C6 and never exercised. Its CCT/dimmer defines ARE
+ * proven, and are kept below.)
  *
  *   CH1 = IO6 = "W" terminal   (legacy L1PIN / cw1)
  *   CH2 = IO5 = "B" terminal   (legacy ww1)
