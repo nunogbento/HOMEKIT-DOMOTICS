@@ -3,13 +3,14 @@
 #include <Preferences.h>
 #include "esp_system.h"    // esp_reset_reason()
 #include "esp_ota_ops.h"   // OTA rollback: mark-valid / running-partition state
+#include <ir_LG.h>          // IRremoteESP8266 — LG split control (proven on the C6 by the HomeKit firmware)
 
 /* OTA ANTI-BRICK ROLLBACK — verifyRollbackLater() is defined below, returning
  * true so the arduino-esp32 core does NOT auto-confirm a freshly-OTA'd image;
  * loop() confirms it only after OTA_VALIDATE_MS of healthy joined uptime. */
 
 /*
- * ESP32-C6 ZIGBEE MULTIACCESSORY  (v2, 0x01000001)  — T-0036
+ * ESP32-C6 ZIGBEE MULTIACCESSORY  (v3, 0x01000002)  — T-0036
  * =========================================================
  * Zigbee replacement for the WiFi/HomeKit (HomeSpan) MultiAccessory firmware.
  * Mains/12 V powered WT0132C6-S5 (ESP32-C6 in the ESP-12F footprint) — joins as
@@ -28,6 +29,18 @@
  * The AM2320 is auto-detected, so "has a sensor" is not a configuration axis at
  * all: EP20 only exists if the sensor answers.
  *
+ * v3 adds the AC: the LG split is driven over IR and presented to Z2M/HA as a
+ * proper climate device. There is no thermostat SERVER in the Arduino Zigbee
+ * library (ZigbeeThermostat is a CLIENT, for building a wall thermostat), so the
+ * AC is COMPOSED from primitives that are already proven on this stack — a
+ * multistate output for the mode, an analog output for the setpoint, a real
+ * FanControl endpoint, and a binary output for the swing — and the external
+ * converter assembles them into one `climate` expose. HA therefore still gets a
+ * genuine climate entity, and HomeKit a thermostat, with no raw esp_zb work.
+ * IR is fire-and-forget, so the state is optimistic (same as the old firmware).
+ * `local_temperature` comes from the AM2320 via the converter — an upgrade on the
+ * HomeKit firmware, where the AC had no idea of the room temperature.
+ *
  * v2 SCOPE: ALL FIVE OUTPUT PROFILES + a transition ramp. Everything is proven
  * on the bench board before any installed board is touched, so the profiles the
  * current fleet does not use (2XCCT / RGBW / RGB_DIM) are implemented too rather
@@ -40,8 +53,13 @@
  *   EP14        Multistate Output -> output profile selector
  *   EP15        Analog Input      -> brownout/reset counter
  *   EP16        Temperature       -> C6 die temperature (diagnostic)
+ *   EP18        Binary Output     -> AC ENABLED (config; IR can't be probed)
  *   EP20        Temperature + Humidity -> AM2320, ONLY IF DETECTED
- *   EP30        reserved for the AC (phase 3)
+ *   EP30        Multistate Output -> AC system mode (off/cool/heat/dry/fan_only)
+ *   EP31        Analog Output     -> AC setpoint °C (16..30)
+ *   EP32        Fan Control       -> AC fan mode
+ *   EP33        Binary Output     -> AC vertical swing
+ *   (EP30..EP33 exist only when AC ENABLED)
  *
  * ⚠️ NO ATTRIBUTE REPORTING ANYWHERE — every Zigbee report path faults this
  * ESP32-C6 zboss build (T-0012, the hard way): app-level report*() asserts in
@@ -104,13 +122,22 @@ static const uint8_t CH_PIN[4] = { 6, 5, 4, 2 };  // CH1..CH4
 #define MIRED_MIN 153
 #define MIRED_MAX 500
 #define CHMASK_DEFAULT 0x0F   // all four channels populated
+/* HA/Z2M often writes mode + setpoint + fan in one go. Coalesce them into ONE IR
+ * frame instead of blasting the split three times. */
+#define AC_SEND_DEBOUNCE_MS 400UL
+#define AC_SETPOINT_MIN 16
+#define AC_SETPOINT_MAX 30
+enum AcMode : uint16_t {
+  AC_OFF = 0, AC_COOL = 1, AC_HEAT = 2, AC_DRY = 3, AC_FAN_ONLY = 4, AC_MODE_COUNT = 5
+};
+static const char *AC_MODE_NAME[AC_MODE_COUNT] = {"off", "cool", "heat", "dry", "fan_only"};
 
 /* OTA identity. NOTE image type 0x1012 — distinct from the wall-input module's
  * 0x1011 so the two DIY devices never see each other's images in the Z2M
  * ota_override index. BUMP OTA_FW_RUNNING EVERY RELEASE (Z2M only offers a
  * strictly-higher fileVersion). */
-#define OTA_FW_RUNNING     0x01000001
-#define OTA_FW_DOWNLOADED  0x01000002
+#define OTA_FW_RUNNING     0x01000002
+#define OTA_FW_DOWNLOADED  0x01000003
 #define OTA_HW_VERSION     0x0101
 #define OTA_MANUFACTURER   0x1001
 #define OTA_IMAGE_TYPE     0x1012
@@ -155,6 +182,14 @@ static unsigned long g_rebootAt   = 0;
 static bool      g_profileEcho    = false;
 static uint8_t   g_chMask         = CHMASK_DEFAULT;
 static bool      g_maskEcho       = false;
+static bool      g_acEnabled      = false;   // config: is an LG split wired to the IR LED?
+static bool      g_acCfgEcho      = false;
+static uint16_t  g_acMode         = AC_OFF;
+static float     g_acSetpoint     = 24.0f;
+static uint8_t   g_acFan          = FAN_MODE_AUTO;
+static bool      g_acSwing        = false;
+static bool      g_acDirty        = false;
+static unsigned long g_acSendAt   = 0;
 
 Preferences prefs;
 
@@ -174,6 +209,12 @@ ZigbeeMultistate  zbCfg(14);    // profile selector
 ZigbeeAnalog      zbDiag(15);   // brownout counter
 ZigbeeTempSensor  zbDie(16);    // die temperature
 ZigbeeAnalog      zbMask(17);   // channel mask (which channels are populated)
+ZigbeeBinary      zbAcCfg(18);  // config: AC enabled
+ZigbeeMultistate  zbAcMode(30); // AC system mode      (created only when enabled)
+ZigbeeAnalog      zbAcTemp(31); // AC setpoint
+ZigbeeFanControl  zbAcFan(32);  // AC fan mode
+ZigbeeBinary      zbAcSwing(33);// AC vertical swing
+IRLgAc           *g_ir = nullptr;
 ZigbeeTempSensor  zbRoom(20);   // AM2320 (added only when present)
 
 /* Channel mapping for the running profile. 0xFF = unused. */
@@ -363,6 +404,96 @@ static void onMaskWrite(float value) {
 }
 
 /* ============================================================
+ *  AC (LG split over IR)
+ * ------------------------------------------------------------
+ *  Composed from a multistate output (mode), an analog output (setpoint), a
+ *  FanControl endpoint and a binary output (swing) — see the header for why.
+ *  IR is one-way, so state is optimistic: whatever was last commanded is what
+ *  we believe the split is doing.
+ * ============================================================ */
+static uint8_t acFanToLg(uint8_t fanMode) {
+  switch (fanMode) {
+    case FAN_MODE_OFF:
+    case FAN_MODE_LOW:    return kLgAcFanLow;
+    case FAN_MODE_MEDIUM: return kLgAcFanMedium;
+    case FAN_MODE_HIGH:   return kLgAcFanHigh;
+    default:              return kLgAcFanAuto;   // ON / AUTO / SMART
+  }
+}
+
+/* Queue an IR frame. Several attribute writes usually arrive together (HA sets
+ * mode, setpoint and fan in one service call), so they coalesce into one send. */
+static void acTouch() {
+  g_acDirty = true;
+  g_acSendAt = millis() + AC_SEND_DEBOUNCE_MS;
+}
+
+static void acSendNow() {
+  g_acDirty = false;
+  if (!g_ir) return;
+  if (g_acMode == AC_OFF) {
+    g_ir->off();
+    Serial.println("AC -> OFF (IR sent)");
+  } else {
+    g_ir->on();
+    switch (g_acMode) {
+      case AC_COOL:     g_ir->setMode(kLgAcCool); break;
+      case AC_HEAT:     g_ir->setMode(kLgAcHeat); break;
+      case AC_DRY:      g_ir->setMode(kLgAcDry);  break;
+      case AC_FAN_ONLY: g_ir->setMode(kLgAcFan);  break;
+      default: break;
+    }
+    int t = (int)(g_acSetpoint + 0.5f);
+    if (t < kLgAcMinTemp) t = kLgAcMinTemp;
+    if (t > kLgAcMaxTemp) t = kLgAcMaxTemp;
+    g_ir->setTemp(t);
+    g_ir->setFan(acFanToLg(g_acFan));
+    g_ir->setSwingV(g_acSwing);
+    Serial.printf("AC -> %s %d C fan=%u swing=%u (IR sent)\n",
+                  AC_MODE_NAME[g_acMode], t, g_acFan, g_acSwing ? 1 : 0);
+  }
+  g_ir->send();
+}
+
+static void onAcModeWrite(uint16_t state) {
+  if (state >= AC_MODE_COUNT) { zbAcMode.setMultistateOutput(g_acMode); return; }
+  g_acMode = state;
+  acTouch();
+}
+
+static void onAcTempWrite(float value) {
+  if (value < AC_SETPOINT_MIN) value = AC_SETPOINT_MIN;
+  if (value > AC_SETPOINT_MAX) value = AC_SETPOINT_MAX;
+  g_acSetpoint = value;
+  acTouch();
+}
+
+static void onAcFanWrite(ZigbeeFanMode mode) {
+  g_acFan = (uint8_t)mode;
+  acTouch();
+}
+
+static void onAcSwingWrite(bool on) {
+  g_acSwing = on;
+  acTouch();
+}
+
+/* Config: is a split actually wired to the IR LED? Can't be probed (IR is
+ * output-only), so it is a stored flag, applied on reboot like the profile. */
+static void onAcCfgWrite(bool enabled) {
+  if (g_acCfgEcho) { g_acCfgEcho = false; return; }
+  if (enabled == g_acEnabled) return;
+  prefs.begin("macfg", false);
+  prefs.putBool("ac", enabled);
+  prefs.end();
+  g_acEnabled = enabled;
+  g_rebootAt = millis() + PROFILE_REBOOT_DELAY_MS;
+  g_rebootPending = true;
+  Serial.printf("AC %s, rebooting in %lu ms (re-interview in Z2M after)\n",
+                enabled ? "ENABLED" : "disabled", PROFILE_REBOOT_DELAY_MS);
+}
+
+/* ============================================================
  *  AM2320 — probe + read, no external library
  * ============================================================ */
 static uint16_t crc16Modbus(const uint8_t *buf, uint8_t len) {
@@ -453,6 +584,7 @@ void setup() {
   g_profileStored = prefs.getUShort("profile", PROFILE_4XDIM);
   g_brownoutCount = prefs.getUInt("bodcnt", 0);
   g_chMask = prefs.getUChar("chmask", CHMASK_DEFAULT);
+  g_acEnabled = prefs.getBool("ac", false);
   if (g_chMask < 1 || g_chMask > 0x0F) g_chMask = CHMASK_DEFAULT;   // self-heal
   esp_reset_reason_t rr = esp_reset_reason();
   if (rr == ESP_RST_BROWNOUT) { g_brownoutCount++; prefs.putUInt("bodcnt", g_brownoutCount); }
@@ -476,6 +608,7 @@ void setup() {
                 (int)rr, g_brownoutCount, PROFILE_NAME[g_profile], g_profileStored,
                 (g_chMask & 8) ? '1' : '0', (g_chMask & 4) ? '1' : '0',
                 (g_chMask & 2) ? '1' : '0', (g_chMask & 1) ? '1' : '0');
+  Serial.printf("AC: %s\n", g_acEnabled ? "enabled -> EP30..EP33" : "disabled (set 'ac_enabled' in Z2M if a split is wired)");
 
   // 3. I2C + sensor auto-detect. EP20 exists only if the AM2320 answers, so
   //    "has a sensor" never has to be configured.
@@ -568,6 +701,39 @@ void setup() {
   zbMask.setAnalogOutputDescription("Channel mask (bit0=CH1 .. bit3=CH4)");
   zbMask.setAnalogOutputMinMax(1, 15);
   zbMask.onAnalogOutputChange(onMaskWrite);
+  zbAcCfg.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
+  zbAcCfg.addBinaryOutput();
+  zbAcCfg.setBinaryOutputDescription("AC enabled (LG split wired to the IR LED)");
+  zbAcCfg.onBinaryOutputChange(onAcCfgWrite);
+
+  // AC endpoints — only when a split is actually wired.
+  if (g_acEnabled) {
+    g_ir = new IRLgAc(IR_LED_PIN);
+    g_ir->calibrate();
+    g_ir->setModel(lg_ac_remote_model_t::AKB75215403);   // same remote as the HomeKit firmware
+    g_ir->begin();
+
+    zbAcMode.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
+    zbAcMode.addMultistateOutput();
+    zbAcMode.setMultistateOutputStates(AC_MODE_COUNT);
+    zbAcMode.setMultistateOutputDescription("AC mode");
+    zbAcMode.onMultistateOutputChange(onAcModeWrite);
+
+    zbAcTemp.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
+    zbAcTemp.addAnalogOutput();
+    zbAcTemp.setAnalogOutputDescription("AC setpoint (C)");
+    zbAcTemp.setAnalogOutputMinMax(AC_SETPOINT_MIN, AC_SETPOINT_MAX);
+    zbAcTemp.onAnalogOutputChange(onAcTempWrite);
+
+    zbAcFan.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
+    zbAcFan.setFanModeSequence(FAN_MODE_SEQUENCE_LOW_MED_HIGH_AUTO);
+    zbAcFan.onFanModeChange(onAcFanWrite);
+
+    zbAcSwing.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
+    zbAcSwing.addBinaryOutput();
+    zbAcSwing.setBinaryOutputDescription("AC vertical swing");
+    zbAcSwing.onBinaryOutputChange(onAcSwingWrite);
+  }
 
   // 7. Room sensor (only when fitted)
   if (g_haveAM2320) {
@@ -595,7 +761,14 @@ void setup() {
   Zigbee.addEndpoint(&zbDiag);
   Zigbee.addEndpoint(&zbDie);
   Zigbee.addEndpoint(&zbMask);
+  Zigbee.addEndpoint(&zbAcCfg);
   if (g_haveAM2320) Zigbee.addEndpoint(&zbRoom);
+  if (g_acEnabled) {
+    Zigbee.addEndpoint(&zbAcMode);
+    Zigbee.addEndpoint(&zbAcTemp);
+    Zigbee.addEndpoint(&zbAcFan);
+    Zigbee.addEndpoint(&zbAcSwing);
+  }
 
   if (!Zigbee.begin(ZIGBEE_ROUTER)) {
     Serial.println("Zigbee.begin() failed — rebooting");
@@ -613,6 +786,16 @@ void setup() {
   zbDiag.setAnalogInput((float)g_brownoutCount);
   g_maskEcho = true;
   zbMask.setAnalogOutput((float)g_chMask);
+  g_acCfgEcho = true;
+  zbAcCfg.setBinaryOutput(g_acEnabled);
+  if (g_acEnabled) {
+    // Publish the optimistic starting state WITHOUT sending IR: the split's real
+    // state is unknown at boot and blasting a frame would change it uninvited.
+    zbAcMode.setMultistateOutput(g_acMode);
+    zbAcTemp.setAnalogOutput(g_acSetpoint);
+    zbAcSwing.setBinaryOutput(g_acSwing);
+    g_acDirty = false;
+  }
 
   // 10. Restore each light from its persisted attributes so a power cut does not
   //     leave strips in a surprise state. This fires the change callbacks, which
@@ -626,6 +809,9 @@ void loop() {
   const unsigned long now = millis();
 
   stepRamps();   // transition ramp for all four PWM channels
+
+  // Coalesced IR frame for the AC (see acTouch()).
+  if (g_acDirty && (long)(now - g_acSendAt) >= 0) acSendNow();
 
   // Deferred profile reboot — see onProfileWrite().
   if (g_rebootPending && (long)(now - g_rebootAt) >= 0) {

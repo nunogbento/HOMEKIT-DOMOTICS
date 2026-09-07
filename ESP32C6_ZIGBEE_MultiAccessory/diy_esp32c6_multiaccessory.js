@@ -27,12 +27,22 @@ const globalStore = require('zigbee-herdsman-converters/lib/store');
 const e = exposes.presets;
 const ea = exposes.access;
 
-const EP = {l1: 10, l2: 11, l3: 12, l4: 13, cfg: 14, diag: 15, die: 16, mask: 17, room: 20};
+const EP = {
+  l1: 10, l2: 11, l3: 12, l4: 13,
+  cfg: 14, diag: 15, die: 16, mask: 17, acCfg: 18, room: 20,
+  acMode: 30, acTemp: 31, acFan: 32, acSwing: 33,
+};
 const LIGHT_EPS = [['l1', 10], ['l2', 11], ['l3', 12], ['l4', 13]];
 
 // Must match the firmware's Profile enum order (presentValue == index).
 const PROFILES = ['4XDIM', 'CCT_2DIM', '2XCCT', 'RGBW', 'RGB_DIM'];
-const PROFILES_IMPLEMENTED = ['4XDIM'];   // firmware v1; extend as phases land
+const PROFILES_IMPLEMENTED = PROFILES;    // all five implemented as of firmware v2
+
+// Must match the firmware's AcMode enum order.
+const AC_MODES = ['off', 'cool', 'heat', 'dry', 'fan_only'];
+// Zigbee FanControl fanMode enum -> Z2M fan_mode strings.
+const FAN_MODES = {0: 'off', 1: 'low', 2: 'medium', 3: 'high', 4: 'on', 5: 'auto', 6: 'smart'};
+const FAN_MODES_EXPOSED = ['low', 'medium', 'high', 'auto'];
 
 // One 60 s tick drives every poll; each value has its own cadence in ticks.
 const POLL_TICK_MS = 60 * 1000;
@@ -70,13 +80,16 @@ const lightKind = (device, id) => {
   return 'cct';
 };
 
-const fzProfile = {
+/* genMultistateOutput: EP14 is the output profile, EP30 the AC mode. */
+const fzMultistateOutput = {
   cluster: 'genMultistateOutput',
   type: ['attributeReport', 'readResponse'],
   convert: (model, msg) => {
     const v = msg.data.presentValue;
     if (v === undefined) return;
-    return {profile: PROFILES[v] !== undefined ? PROFILES[v] : v};
+    if (msg.endpoint.ID === EP.cfg) return {profile: PROFILES[v] !== undefined ? PROFILES[v] : v};
+    if (msg.endpoint.ID === EP.acMode) return {system_mode: AC_MODES[v] !== undefined ? AC_MODES[v] : v};
+    return;
   },
 };
 
@@ -90,7 +103,13 @@ const fzTemperature = {
     const v = msg.data.measuredValue;
     if (v === undefined) return;
     if (msg.endpoint.ID === EP.die) return {device_temperature: Math.round(v / 100)};
-    if (msg.endpoint.ID === EP.room) return {temperature: Math.round(v) / 100};
+    if (msg.endpoint.ID === EP.room) {
+      const t = Math.round(v) / 100;
+      // The climate expose has no local temperature of its own — the split can't
+      // report one over IR — so the room sensor feeds it.
+      const hasAc = msg.device && msg.device.getEndpoint && msg.device.getEndpoint(EP.acMode);
+      return hasAc ? {temperature: t, local_temperature: t} : {temperature: t};
+    }
     return;
   },
 };
@@ -105,13 +124,40 @@ const fzHumidity = {
   },
 };
 
-const fzMask = {
+/* genAnalogOutput is used by two very different things, so switch on endpoint:
+ * EP17 is the channel mask, EP31 is the AC setpoint. */
+const fzAnalogOutput = {
   cluster: 'genAnalogOutput',
   type: ['attributeReport', 'readResponse'],
   convert: (model, msg) => {
     const v = msg.data.presentValue;
     if (v === undefined) return;
-    return {channels: Math.round(v)};
+    if (msg.endpoint.ID === EP.mask) return {channels: Math.round(v)};
+    if (msg.endpoint.ID === EP.acTemp) return {occupied_cooling_setpoint: Math.round(v * 10) / 10};
+    return;
+  },
+};
+
+/* Same story for genBinaryOutput: EP18 is the AC-enabled config flag, EP33 the swing. */
+const fzBinaryOutput = {
+  cluster: 'genBinaryOutput',
+  type: ['attributeReport', 'readResponse'],
+  convert: (model, msg) => {
+    const v = msg.data.presentValue;
+    if (v === undefined) return;
+    if (msg.endpoint.ID === EP.acCfg) return {ac_enabled: v ? 'ON' : 'OFF'};
+    if (msg.endpoint.ID === EP.acSwing) return {swing: v ? 'ON' : 'OFF'};
+    return;
+  },
+};
+
+const fzFanMode = {
+  cluster: 'hvacFanCtrl',
+  type: ['attributeReport', 'readResponse'],
+  convert: (model, msg) => {
+    const v = msg.data.fanMode;
+    if (v === undefined) return;
+    return {fan_mode: FAN_MODES[v] !== undefined ? FAN_MODES[v] : v};
   },
 };
 
@@ -167,14 +213,81 @@ const tzMask = {
   },
 };
 
+const writeEp = async (meta, epId, cluster, payload, what) => {
+  const ep = meta.device.getEndpoint(epId);
+  if (!ep) throw new Error(`device has no ${what} endpoint (EP${epId})`);
+  await ep.write(cluster, payload);
+};
+
+const tzAc = {
+  key: ['system_mode', 'occupied_cooling_setpoint', 'fan_mode', 'swing'],
+  convertSet: async (entity, key, value, meta) => {
+    switch (key) {
+      case 'system_mode': {
+        const idx = AC_MODES.indexOf(String(value).toLowerCase());
+        if (idx < 0) throw new Error(`system_mode must be one of: ${AC_MODES.join(', ')}`);
+        await writeEp(meta, EP.acMode, 'genMultistateOutput', {presentValue: idx}, 'AC mode');
+        return {state: {system_mode: AC_MODES[idx]}};
+      }
+      case 'occupied_cooling_setpoint': {
+        const t = Number(value);
+        if (!(t >= 16 && t <= 30)) throw new Error('setpoint must be 16..30 C');
+        await writeEp(meta, EP.acTemp, 'genAnalogOutput', {presentValue: t}, 'AC setpoint');
+        return {state: {occupied_cooling_setpoint: t}};
+      }
+      case 'fan_mode': {
+        const wanted = String(value).toLowerCase();
+        const num = Object.keys(FAN_MODES).find((k) => FAN_MODES[k] === wanted);
+        if (num === undefined) throw new Error(`fan_mode must be one of: ${FAN_MODES_EXPOSED.join(', ')}`);
+        await writeEp(meta, EP.acFan, 'hvacFanCtrl', {fanMode: Number(num)}, 'AC fan');
+        return {state: {fan_mode: wanted}};
+      }
+      case 'swing': {
+        const on = String(value).toUpperCase() === 'ON' || value === true;
+        await writeEp(meta, EP.acSwing, 'genBinaryOutput', {presentValue: on ? 1 : 0}, 'AC swing');
+        return {state: {swing: on ? 'ON' : 'OFF'}};
+      }
+      default: return;
+    }
+  },
+  convertGet: async (entity, key, meta) => {
+    const map = {
+      system_mode: [EP.acMode, 'genMultistateOutput', ['presentValue']],
+      occupied_cooling_setpoint: [EP.acTemp, 'genAnalogOutput', ['presentValue']],
+      fan_mode: [EP.acFan, 'hvacFanCtrl', ['fanMode']],
+      swing: [EP.acSwing, 'genBinaryOutput', ['presentValue']],
+    };
+    const m = map[key];
+    if (!m) return;
+    const ep = meta.device.getEndpoint(m[0]);
+    if (ep) await ep.read(m[1], m[2]);
+  },
+};
+
+const tzAcEnabled = {
+  key: ['ac_enabled'],
+  convertSet: async (entity, key, value, meta) => {
+    const on = String(value).toUpperCase() === 'ON' || value === true;
+    await writeEp(meta, EP.acCfg, 'genBinaryOutput', {presentValue: on ? 1 : 0}, 'AC config');
+    // Stored in NVS; the board REBOOTS and must be re-interviewed before the
+    // AC endpoints appear (or disappear).
+    return {state: {ac_enabled: on ? 'ON' : 'OFF'}};
+  },
+  convertGet: async (entity, key, meta) => {
+    const ep = meta.device.getEndpoint(EP.acCfg);
+    if (ep) await ep.read('genBinaryOutput', ['presentValue']);
+  },
+};
+
 module.exports = [
   {
     zigbeeModel: ['ESP32C6-MULTIACCESSORY'],
     model: 'ESP32C6-MULTIACCESSORY',
     vendor: 'DIY',
     description: 'ESP32-C6 MultiAccessory — 4 PWM channels, IR AC and AM2320, Zigbee router',
-    fromZigbee: [fz.on_off, fz.brightness, fz.color_colortemp, fzProfile, fzMask, fzTemperature, fzHumidity, fzBrownout],
-    toZigbee: [tz.light_onoff_brightness, tz.light_color_colortemp, tzProfile, tzMask],
+    fromZigbee: [fz.on_off, fz.brightness, fz.color_colortemp, fzMultistateOutput, fzAnalogOutput,
+                 fzBinaryOutput, fzFanMode, fzTemperature, fzHumidity, fzBrownout],
+    toZigbee: [tz.light_onoff_brightness, tz.light_color_colortemp, tzProfile, tzMask, tzAc, tzAcEnabled],
     ota: true,
     meta: {multiEndpoint: true},
     endpoint: () => ({...EP}),
@@ -204,6 +317,22 @@ module.exports = [
       list.push(exposes.numeric('brownout_count', ea.STATE)
         .withDescription('Brownout/unexpected resets since flash'));
       list.push(e.device_temperature().withDescription('MCU die temperature (diagnostic, not ambient)'));
+      // AC: one climate expose assembled from EP30..EP33, so HA gets a real
+      // climate entity (and HomeKit a thermostat) despite there being no
+      // thermostat server cluster on the device.
+      if (hasEp(device, EP.acMode)) {
+        list.push(exposes.climate()
+          .withSystemMode(AC_MODES)
+          .withSetpoint('occupied_cooling_setpoint', 16, 30, 1)
+          .withLocalTemperature()
+          .withFanMode(FAN_MODES_EXPOSED)
+          .withDescription('LG split driven over IR. One-way: the state shown is what was last ' +
+            'commanded, not read back from the unit. local_temperature comes from the AM2320.'));
+        list.push(exposes.binary('swing', ea.ALL, 'ON', 'OFF').withDescription('Vertical swing'));
+      }
+      list.push(exposes.binary('ac_enabled', ea.ALL, 'ON', 'OFF')
+        .withDescription('Is an LG split wired to this board\'s IR LED? IR cannot be probed, so this ' +
+          'is a stored setting. The board REBOOTS to apply and must then be re-interviewed.'));
       // Room sensor only on boards where the AM2320 was auto-detected.
       if (hasEp(device, EP.room)) {
         list.push(e.temperature(), e.humidity());
@@ -227,6 +356,11 @@ module.exports = [
       }
       await readSafe(EP.cfg, 'genMultistateOutput', ['presentValue']);
       await readSafe(EP.mask, 'genAnalogOutput', ['presentValue']);
+      await readSafe(EP.acCfg, 'genBinaryOutput', ['presentValue']);
+      await readSafe(EP.acMode, 'genMultistateOutput', ['presentValue']);
+      await readSafe(EP.acTemp, 'genAnalogOutput', ['presentValue']);
+      await readSafe(EP.acFan, 'hvacFanCtrl', ['fanMode']);
+      await readSafe(EP.acSwing, 'genBinaryOutput', ['presentValue']);
       await readSafe(EP.diag, 'genAnalogInput', ['presentValue']);
       await readSafe(EP.die, 'msTemperatureMeasurement', ['measuredValue']);
       await readSafe(EP.room, 'msTemperatureMeasurement', ['measuredValue']);
