@@ -27,7 +27,7 @@ const globalStore = require('zigbee-herdsman-converters/lib/store');
 const e = exposes.presets;
 const ea = exposes.access;
 
-const EP = {l1: 10, l2: 11, l3: 12, l4: 13, cfg: 14, diag: 15, die: 16, room: 20};
+const EP = {l1: 10, l2: 11, l3: 12, l4: 13, cfg: 14, diag: 15, die: 16, mask: 17, room: 20};
 const LIGHT_EPS = [['l1', 10], ['l2', 11], ['l3', 12], ['l4', 13]];
 
 // Must match the firmware's Profile enum order (presentValue == index).
@@ -105,6 +105,16 @@ const fzHumidity = {
   },
 };
 
+const fzMask = {
+  cluster: 'genAnalogOutput',
+  type: ['attributeReport', 'readResponse'],
+  convert: (model, msg) => {
+    const v = msg.data.presentValue;
+    if (v === undefined) return;
+    return {channels: Math.round(v)};
+  },
+};
+
 const fzBrownout = {
   cluster: 'genAnalogInput',
   type: ['attributeReport', 'readResponse'],
@@ -137,14 +147,34 @@ const tzProfile = {
   },
 };
 
+const tzMask = {
+  key: ['channels'],
+  convertSet: async (entity, key, value, meta) => {
+    const v = Number(value);
+    if (!Number.isInteger(v) || v < 1 || v > 15) {
+      throw new Error('channels must be an integer 1..15 (bit0=CH1 .. bit3=CH4)');
+    }
+    const ep = meta.device.getEndpoint(EP.mask);
+    if (!ep) throw new Error('device has no channel-mask endpoint (EP17)');
+    await ep.write('genAnalogOutput', {presentValue: v});
+    // Like the profile: stored in NVS, the board REBOOTS, and Z2M must
+    // re-interview before the new endpoint set shows up.
+    return {state: {[key]: v}};
+  },
+  convertGet: async (entity, key, meta) => {
+    const ep = meta.device.getEndpoint(EP.mask);
+    if (ep) await ep.read('genAnalogOutput', ['presentValue']);
+  },
+};
+
 module.exports = [
   {
     zigbeeModel: ['ESP32C6-MULTIACCESSORY'],
     model: 'ESP32C6-MULTIACCESSORY',
     vendor: 'DIY',
     description: 'ESP32-C6 MultiAccessory — 4 PWM channels, IR AC and AM2320, Zigbee router',
-    fromZigbee: [fz.on_off, fz.brightness, fz.color_colortemp, fzProfile, fzTemperature, fzHumidity, fzBrownout],
-    toZigbee: [tz.light_onoff_brightness, tz.light_color_colortemp, tzProfile],
+    fromZigbee: [fz.on_off, fz.brightness, fz.color_colortemp, fzProfile, fzMask, fzTemperature, fzHumidity, fzBrownout],
+    toZigbee: [tz.light_onoff_brightness, tz.light_color_colortemp, tzProfile, tzMask],
     ota: true,
     meta: {multiEndpoint: true},
     endpoint: () => ({...EP}),
@@ -166,6 +196,11 @@ module.exports = [
         .withDescription('Output profile. Stored in NVS; the board REBOOTS to apply it and must then be ' +
           're-interviewed in Z2M, because Zigbee fixes endpoint composition at interview time. ' +
           `Implemented in firmware v1: ${PROFILES_IMPLEMENTED.join(', ')} — anything else falls back to 4XDIM.`));
+      list.push(exposes.numeric('channels', ea.ALL).withValueMin(1).withValueMax(15)
+        .withDescription('Which PWM channels are actually populated on this board, as a bitmask: ' +
+          'bit0=CH1, bit1=CH2, bit2=CH3, bit3=CH4. A board with one strip is 1; the studio board, ' +
+          'wired on CH1+CH3, is 5; all four is 15. A CCT pair needs both of its channels set. ' +
+          'Stored in NVS; the board REBOOTS to apply and must then be re-interviewed.'));
       list.push(exposes.numeric('brownout_count', ea.STATE)
         .withDescription('Brownout/unexpected resets since flash'));
       list.push(e.device_temperature().withDescription('MCU die temperature (diagnostic, not ambient)'));
@@ -191,6 +226,7 @@ module.exports = [
         await readSafe(id, 'lightingColorCtrl', ['colorCapabilities']);
       }
       await readSafe(EP.cfg, 'genMultistateOutput', ['presentValue']);
+      await readSafe(EP.mask, 'genAnalogOutput', ['presentValue']);
       await readSafe(EP.diag, 'genAnalogInput', ['presentValue']);
       await readSafe(EP.die, 'msTemperatureMeasurement', ['measuredValue']);
       await readSafe(EP.room, 'msTemperatureMeasurement', ['measuredValue']);

@@ -103,6 +103,7 @@ static const uint8_t CH_PIN[4] = { 6, 5, 4, 2 };  // CH1..CH4
  * (warm). Z2M/HA send mireds; the firmware mixes cool/warm to match. */
 #define MIRED_MIN 153
 #define MIRED_MAX 500
+#define CHMASK_DEFAULT 0x0F   // all four channels populated
 
 /* OTA identity. NOTE image type 0x1012 — distinct from the wall-input module's
  * 0x1011 so the two DIY devices never see each other's images in the Z2M
@@ -152,6 +153,8 @@ static unsigned long g_rebootAt   = 0;
  * profile is itself unimplemented that becomes an endless reject/bounce loop
  * (observed on the bench). One-shot flag to swallow our own echo. */
 static bool      g_profileEcho    = false;
+static uint8_t   g_chMask         = CHMASK_DEFAULT;
+static bool      g_maskEcho       = false;
 
 Preferences prefs;
 
@@ -170,6 +173,7 @@ ZigbeeEP                 *zbEp10   = nullptr;   // whichever endpoint owns EP10 
 ZigbeeMultistate  zbCfg(14);    // profile selector
 ZigbeeAnalog      zbDiag(15);   // brownout counter
 ZigbeeTempSensor  zbDie(16);    // die temperature
+ZigbeeAnalog      zbMask(17);   // channel mask (which channels are populated)
 ZigbeeTempSensor  zbRoom(20);   // AM2320 (added only when present)
 
 /* Channel mapping for the running profile. 0xFF = unused. */
@@ -330,6 +334,34 @@ static void onProfileWrite(uint16_t state) {
                 PROFILE_NAME[state], PROFILE_REBOOT_DELAY_MS);
 }
 
+static void onMaskWrite(float value) {
+  if (g_maskEcho) { g_maskEcho = false; return; }        // our own bounce
+  const int v = (int)(value + 0.5f);
+  if (v < 1 || v > 0x0F) {
+    // 0 would leave the board with no lights at all, and nothing above 0b1111
+    // maps to a channel. Refuse and put the real value back.
+    Serial.printf("Channel mask %d invalid (1..15) — rejected\n", v);
+    g_maskEcho = true;
+    zbMask.setAnalogOutput((float)g_chMask);
+    return;
+  }
+  if ((uint8_t)v == g_chMask) return;
+
+  prefs.begin("macfg", false);
+  prefs.putUChar("chmask", (uint8_t)v);
+  prefs.end();
+  g_chMask = (uint8_t)v;
+
+  // Same rule as the profile: endpoint composition is fixed at interview time,
+  // so this needs a reboot, and Z2M must re-interview afterwards. Deferred to
+  // loop() so the write is acknowledged first.
+  g_rebootAt = millis() + PROFILE_REBOOT_DELAY_MS;
+  g_rebootPending = true;
+  Serial.printf("Channel mask -> 0b%c%c%c%c, rebooting in %lu ms (re-interview in Z2M after)\n",
+                (v & 8) ? '1' : '0', (v & 4) ? '1' : '0',
+                (v & 2) ? '1' : '0', (v & 1) ? '1' : '0', PROFILE_REBOOT_DELAY_MS);
+}
+
 /* ============================================================
  *  AM2320 — probe + read, no external library
  * ============================================================ */
@@ -420,6 +452,8 @@ void setup() {
   prefs.begin("macfg", false);
   g_profileStored = prefs.getUShort("profile", PROFILE_4XDIM);
   g_brownoutCount = prefs.getUInt("bodcnt", 0);
+  g_chMask = prefs.getUChar("chmask", CHMASK_DEFAULT);
+  if (g_chMask < 1 || g_chMask > 0x0F) g_chMask = CHMASK_DEFAULT;   // self-heal
   esp_reset_reason_t rr = esp_reset_reason();
   if (rr == ESP_RST_BROWNOUT) { g_brownoutCount++; prefs.putUInt("bodcnt", g_brownoutCount); }
   prefs.end();
@@ -438,8 +472,10 @@ void setup() {
     prefs.putUShort("profile", PROFILE_4XDIM);
     prefs.end();
   }
-  Serial.printf("Boot: reset_reason=%d brownout_count=%u profile=%s(stored %u)\n",
-                (int)rr, g_brownoutCount, PROFILE_NAME[g_profile], g_profileStored);
+  Serial.printf("Boot: reset_reason=%d brownout_count=%u profile=%s(stored %u) chmask=0b%c%c%c%c\n",
+                (int)rr, g_brownoutCount, PROFILE_NAME[g_profile], g_profileStored,
+                (g_chMask & 8) ? '1' : '0', (g_chMask & 4) ? '1' : '0',
+                (g_chMask & 2) ? '1' : '0', (g_chMask & 1) ? '1' : '0');
 
   // 3. I2C + sensor auto-detect. EP20 exists only if the AM2320 answers, so
   //    "has a sensor" never has to be configured.
@@ -454,13 +490,18 @@ void setup() {
   //    which profile is running — a CCT light on EP10 replaces the dimmer that
   //    would otherwise be there, and EP11 simply does not exist because CH2 is
   //    its warm half.
+  const auto chOn  = [&](uint8_t ch) { return (g_chMask >> ch) & 1; };
+  const auto pairOn = [&](uint8_t a, uint8_t b) { return chOn(a) && chOn(b); };
+
   auto newDim = [&](uint8_t slot, uint8_t endpoint, uint8_t ch) {
+    if (!chOn(ch)) return;            // channel not populated on this board
     g_dimCh[slot] = ch;
     zbDim[slot] = new ZigbeeDimmableLight(endpoint);
     zbDim[slot]->setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
     zbDim[slot]->setPowerSource(ZB_POWER_SOURCE_MAINS);   // mains-powered router
   };
   auto newCct = [&](uint8_t slot, uint8_t endpoint, uint8_t cool, uint8_t warm) {
+    if (!pairOn(cool, warm)) return;  // a CCT pair needs BOTH halves populated
     g_cctCool[slot] = cool;
     g_cctWarm[slot] = warm;
     zbCct[slot] = new ZigbeeColorDimmableLight(endpoint);
@@ -522,6 +563,11 @@ void setup() {
   zbDiag.setAnalogInputDescription("Brownout count");
   zbDie.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
   zbDie.setMinMaxValue(-40, 125);
+  zbMask.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
+  zbMask.addAnalogOutput();
+  zbMask.setAnalogOutputDescription("Channel mask (bit0=CH1 .. bit3=CH4)");
+  zbMask.setAnalogOutputMinMax(1, 15);
+  zbMask.onAnalogOutputChange(onMaskWrite);
 
   // 7. Room sensor (only when fitted)
   if (g_haveAM2320) {
@@ -548,6 +594,7 @@ void setup() {
   Zigbee.addEndpoint(&zbCfg);
   Zigbee.addEndpoint(&zbDiag);
   Zigbee.addEndpoint(&zbDie);
+  Zigbee.addEndpoint(&zbMask);
   if (g_haveAM2320) Zigbee.addEndpoint(&zbRoom);
 
   if (!Zigbee.begin(ZIGBEE_ROUTER)) {
@@ -564,6 +611,8 @@ void setup() {
   // 9. Publish the current profile and the boot-time diagnostics.
   zbCfg.setMultistateOutput(g_profileStored);
   zbDiag.setAnalogInput((float)g_brownoutCount);
+  g_maskEcho = true;
+  zbMask.setAnalogOutput((float)g_chMask);
 
   // 10. Restore each light from its persisted attributes so a power cut does not
   //     leave strips in a surprise state. This fires the change callbacks, which
