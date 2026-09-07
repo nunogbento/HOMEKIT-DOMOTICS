@@ -241,12 +241,33 @@ module.exports = [
     onEvent: async (a, b, c) => {
       const type = typeof a === 'string' ? a : a?.type;
       const device = typeof a === 'string' ? c : a?.data?.device;
+      const exposesChanged = typeof a === 'string' ? undefined : a?.data?.deviceExposesChanged;
       if (!device) return;
       if (type === 'stop' || type === 'deviceLeave') {
         const h = globalStore.getValue(device, 'poll');
         if (h) { clearInterval(h); globalStore.clearValue(device, 'poll'); }
         return;
       }
+      /* Z2M computes exposes right after the interview, BEFORE configure() runs,
+       * so colorCapabilities isn't cached yet and lightKind() falls back to CCT —
+       * an RGBW board would render as a colour-temperature light. Read the
+       * capability once here and ask Z2M to recompute the exposes afterwards. */
+      if (!globalStore.hasValue(device, 'caps')) {
+        globalStore.putValue(device, 'caps', true);
+        (async () => {
+          let got = false;
+          for (const [, id] of LIGHT_EPS) {
+            const ep = device.getEndpoint(id);
+            if (!ep || !(ep.supportsInputCluster && ep.supportsInputCluster('lightingColorCtrl'))) continue;
+            try {
+              await ep.read('lightingColorCtrl', ['colorCapabilities']);
+              got = true;
+            } catch (err) { /* endpoint offline; the next event retries */ }
+          }
+          if (got && exposesChanged) exposesChanged();
+        })();
+      }
+
       if (globalStore.hasValue(device, 'poll')) return;
 
       let tick = 0;
