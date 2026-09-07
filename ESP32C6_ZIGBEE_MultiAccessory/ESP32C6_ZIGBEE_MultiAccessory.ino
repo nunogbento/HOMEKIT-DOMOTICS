@@ -81,7 +81,23 @@
  *  numbers behind the pads differ: ch 13/14/16/12 -> 6/5/4/2, IR 10 -> 21,
  *  SDA 4/SCL 5 -> 10/3.
  * ============================================================ */
-static const uint8_t CH_PIN[4] = { 6, 5, 4, 2 };  // CH1..CH4
+/* Channel -> GPIO. The board's OUTPUT TERMINAL ORDER is, per the silkscreen:
+ *
+ *      +12V | G = IO2 | R = IO4 | B = IO5 | W = IO6
+ *
+ * That order is deliberate — it matches the pad order of a standard RGBW strip,
+ * so a strip solders straight across with no crossed wires. THE SILKSCREEN IS
+ * AUTHORITATIVE. (The RGB defines in the legacy HomeSpan Configuration.h —
+ * WHITE=2, RED=4, GREEN=5, BLUE=6 — disagree on three of four; no RGBW board is
+ * live any more, so those were renumbered for the C6 and never exercised. Its
+ * CCT/dimmer defines ARE proven, and are kept below.)
+ *
+ *   CH1 = IO6 = "W" terminal   (legacy L1PIN / cw1)
+ *   CH2 = IO5 = "B" terminal   (legacy ww1)
+ *   CH3 = IO4 = "R" terminal   (legacy L2PIN / cw2)
+ *   CH4 = IO2 = "G" terminal   (legacy ww2)
+ */
+static const uint8_t CH_PIN[4] = { 6, 5, 4, 2 };  // CH1..CH4  (IO6, IO5, IO4, IO2)
 #define IR_LED_PIN   21                            // phase 3
 #define SDA_PIN      10
 #define SCL_PIN      3
@@ -152,8 +168,8 @@ enum Profile : uint16_t {
   PROFILE_4XDIM    = 0,  // 4 independent dimmers
   PROFILE_CCT_2DIM = 1,  // CCT on CH1+CH2, dimmers on CH3, CH4
   PROFILE_2XCCT    = 2,  // CCT on CH1+CH2 and CH3+CH4
-  PROFILE_RGBW     = 3,  // R=CH3 G=CH2 B=CH1 W=CH4 (matches the legacy pin map)
-  PROFILE_RGB_DIM  = 4,  // RGB on CH3/CH2/CH1, dimmer on CH4
+  PROFILE_RGBW     = 3,  // R=IO4 G=IO2 B=IO5 W=IO6 (the board's terminal order)
+  PROFILE_RGB_DIM  = 4,  // RGB as above, dimmer on the spare "W" terminal (IO6)
   PROFILE_COUNT    = 5
 };
 static const char *PROFILE_NAME[PROFILE_COUNT] = {
@@ -659,19 +675,23 @@ void setup() {
       newDim(0, 10, 0); newDim(1, 11, 1); newDim(2, 12, 2); newDim(3, 13, 3);
       break;
     case PROFILE_CCT_2DIM:
-      newCct(0, 10, 0, 1);                 // CH1 cool + CH2 warm
+      // CCT pairs keep the LEGACY cw/ww pins, which ARE proven: the live
+      // living-room board is already wired cw=IO6 ("W"), ww=IO5 ("B").
+      newCct(0, 10, 0, 1);                 // CH1 cool (IO6/W) + CH2 warm (IO5/B)
       newDim(2, 12, 2); newDim(3, 13, 3);  // CH3, CH4 stay independent dimmers
       break;
     case PROFILE_2XCCT:
-      newCct(0, 10, 0, 1);                 // CH1 cool + CH2 warm
-      newCct(1, 12, 2, 3);                 // CH3 cool + CH4 warm
+      newCct(0, 10, 0, 1);                 // CH1 cool (IO6/W) + CH2 warm (IO5/B)
+      newCct(1, 12, 2, 3);                 // CH3 cool (IO4/R) + CH4 warm (IO2/G)
       break;
     case PROFILE_RGBW:
-      newRgb(10, 2, 1, 0, 3);              // R=CH3 G=CH2 B=CH1 W=CH4 (legacy pin map)
+      // Follows the silkscreen: R=IO4(CH3) G=IO2(CH4) B=IO5(CH2) W=IO6(CH1).
+      newRgb(10, 2, 3, 1, 0);
       break;
     case PROFILE_RGB_DIM:
-      newRgb(10, 2, 1, 0, 0xFF);           // R=CH3 G=CH2 B=CH1, no white
-      newDim(3, 13, 3);                    // CH4 independent dimmer
+      // Same R/G/B as RGBW; the spare channel is the "W" terminal (IO6/CH1).
+      newRgb(10, 2, 3, 1, 0xFF);
+      newDim(3, 13, 0);                    // dimmer on IO6 ("W" terminal)
       break;
     default:
       break;
