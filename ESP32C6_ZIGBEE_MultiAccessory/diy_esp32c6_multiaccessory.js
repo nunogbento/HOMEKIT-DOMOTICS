@@ -53,10 +53,21 @@ const hasEp = (device, id) => {
   const d = asDevice(device);
   return d ? !!d.getEndpoint(id) : true;   // unknown -> assume present
 };
-const isCct = (device, id) => {
+/* What KIND of light lives on this endpoint. The firmware declares
+ * colorCapabilities per profile — CT-only for the CCT profiles, hue/sat + x/y
+ * for RGBW/RGB_DIM — so read that rather than guessing from which endpoints
+ * exist (which cannot separate RGB_DIM from CCT_2DIM reliably). configure()
+ * reads the attribute so it is in herdsman's cache by the time we get here. */
+const CAP_HUE_SAT = 0x01, CAP_XY = 0x08, CAP_COLOR_TEMP = 0x10;
+const lightKind = (device, id) => {
   const d = asDevice(device);
   const ep = d && d.getEndpoint(id);
-  return !!(ep && ep.supportsInputCluster && ep.supportsInputCluster('lightingColorCtrl'));
+  if (!ep) return 'dimmer';
+  if (!(ep.supportsInputCluster && ep.supportsInputCluster('lightingColorCtrl'))) return 'dimmer';
+  const caps = ep.getClusterAttributeValue ? ep.getClusterAttributeValue('lightingColorCtrl', 'colorCapabilities') : undefined;
+  if (caps === undefined || caps === null) return 'cct';   // unknown: CCT is the only colour-ish profile in the fleet
+  if (caps & (CAP_HUE_SAT | CAP_XY)) return (caps & CAP_COLOR_TEMP) ? 'color_cct' : 'color';
+  return 'cct';
 };
 
 const fzProfile = {
@@ -133,7 +144,7 @@ module.exports = [
     vendor: 'DIY',
     description: 'ESP32-C6 MultiAccessory — 4 PWM channels, IR AC and AM2320, Zigbee router',
     fromZigbee: [fz.on_off, fz.brightness, fz.color_colortemp, fzProfile, fzTemperature, fzHumidity, fzBrownout],
-    toZigbee: [tz.light_onoff_brightness, tz.light_colortemp, tzProfile],
+    toZigbee: [tz.light_onoff_brightness, tz.light_color_colortemp, tzProfile],
     ota: true,
     meta: {multiEndpoint: true},
     endpoint: () => ({...EP}),
@@ -143,9 +154,13 @@ module.exports = [
       // when the firmware declared lightingColorCtrl on it.
       for (const [name, id] of LIGHT_EPS) {
         if (!hasEp(device, id)) continue;
-        list.push(isCct(device, id)
-          ? e.light_brightness_colortemp([153, 500]).withEndpoint(name)
-          : e.light_brightness().withEndpoint(name));
+        const kind = lightKind(device, id);
+        const expose =
+          kind === 'cct'       ? e.light_brightness_colortemp([153, 500]) :
+          kind === 'color'     ? e.light_brightness_colorhs() :
+          kind === 'color_cct' ? e.light_brightness_colortemp_colorhs([153, 500]) :
+                                 e.light_brightness();
+        list.push(expose.withEndpoint(name));
       }
       list.push(exposes.enum('profile', ea.ALL, PROFILES)
         .withDescription('Output profile. Stored in NVS; the board REBOOTS to apply it and must then be ' +
@@ -171,6 +186,9 @@ module.exports = [
       for (const [, id] of LIGHT_EPS) {
         await readSafe(id, 'genOnOff', ['onOff']);
         await readSafe(id, 'genLevelCtrl', ['currentLevel']);
+        // Cache colorCapabilities so lightKind() can tell CCT from RGB. Harmless
+        // on a plain dimmer endpoint (no such cluster -> the read just fails).
+        await readSafe(id, 'lightingColorCtrl', ['colorCapabilities']);
       }
       await readSafe(EP.cfg, 'genMultistateOutput', ['presentValue']);
       await readSafe(EP.diag, 'genAnalogInput', ['presentValue']);

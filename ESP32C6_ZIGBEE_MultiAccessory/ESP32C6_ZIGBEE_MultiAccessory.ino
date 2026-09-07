@@ -9,7 +9,7 @@
  * loop() confirms it only after OTA_VALIDATE_MS of healthy joined uptime. */
 
 /*
- * ESP32-C6 ZIGBEE MULTIACCESSORY  (v1, 0x01000000)  — T-0036
+ * ESP32-C6 ZIGBEE MULTIACCESSORY  (v2, 0x01000001)  — T-0036
  * =========================================================
  * Zigbee replacement for the WiFi/HomeKit (HomeSpan) MultiAccessory firmware.
  * Mains/12 V powered WT0132C6-S5 (ESP32-C6 in the ESP-12F footprint) — joins as
@@ -28,10 +28,12 @@
  * The AM2320 is auto-detected, so "has a sensor" is not a configuration axis at
  * all: EP20 only exists if the sensor answers.
  *
- * v1 SCOPE (phase 1 of T-0036): PROFILE_4XDIM only, T/H auto-detect, OTA client
- * + rollback guard. CCT_2DIM lands in phase 2 (it is the only other profile the
- * live fleet needs), the composed AC endpoint in phase 3. An unimplemented
- * profile falls back to 4XDIM with a log line rather than bricking the board.
+ * v2 SCOPE: ALL FIVE OUTPUT PROFILES + a transition ramp. Everything is proven
+ * on the bench board before any installed board is touched, so the profiles the
+ * current fleet does not use (2XCCT / RGBW / RGB_DIM) are implemented too rather
+ * than deferred — the bench board is the only place they can be tested, and once
+ * a board is in a wall nobody wants to iterate on it. The composed AC endpoint
+ * (phase 3) is still to come.
  *
  * ENDPOINT MAP
  *   EP10..EP13  Dimmable Light, one per PWM channel (OTA client sits on EP10)
@@ -90,13 +92,24 @@ static const uint8_t CH_PIN[4] = { 6, 5, 4, 2 };  // CH1..CH4
  * ZCL callback means the stack never sends the write response and the
  * coordinator logs the write as failed even though it succeeded. */
 #define PROFILE_REBOOT_DELAY_MS 2500UL
+/* Transition ramp. The Zigbee level-control transition time is not surfaced by
+ * the Arduino endpoint classes, so a bare command is a step change — visibly
+ * worse than the HomeKit firmware it replaces. A short linear ramp fixes that.
+ * Kept SHORT on purpose: one of the target boards drives motion-triggered stair
+ * lighting, where a slow fade reads as lag. This is a fade-in, not a delay —
+ * the light starts moving immediately. */
+#define RAMP_MS 250UL
+/* Mired range advertised for CCT endpoints: 153 = 6500 K (cool), 500 = 2000 K
+ * (warm). Z2M/HA send mireds; the firmware mixes cool/warm to match. */
+#define MIRED_MIN 153
+#define MIRED_MAX 500
 
 /* OTA identity. NOTE image type 0x1012 — distinct from the wall-input module's
  * 0x1011 so the two DIY devices never see each other's images in the Z2M
  * ota_override index. BUMP OTA_FW_RUNNING EVERY RELEASE (Z2M only offers a
  * strictly-higher fileVersion). */
-#define OTA_FW_RUNNING     0x01000000
-#define OTA_FW_DOWNLOADED  0x01000001
+#define OTA_FW_RUNNING     0x01000001
+#define OTA_FW_DOWNLOADED  0x01000002
 #define OTA_HW_VERSION     0x0101
 #define OTA_MANUFACTURER   0x1001
 #define OTA_IMAGE_TYPE     0x1012
@@ -108,23 +121,23 @@ static const uint8_t CH_PIN[4] = { 6, 5, 4, 2 };  // CH1..CH4
  *  OUTPUT PROFILES
  * ============================================================ */
 enum Profile : uint16_t {
-  PROFILE_4XDIM    = 0,  // 4 independent dimmers                     [v1]
-  PROFILE_CCT_2DIM = 1,  // CCT on CH1+CH2, dimmers on CH3, CH4       [phase 2]
-  PROFILE_2XCCT    = 2,  // CCT on CH1+CH2 and CH3+CH4                [deferred]
-  PROFILE_RGBW     = 3,  // R=CH3 G=CH2 B=CH1 W=CH4                   [deferred]
-  PROFILE_RGB_DIM  = 4,  // RGB on CH1..CH3, dimmer on CH4            [deferred]
+  PROFILE_4XDIM    = 0,  // 4 independent dimmers
+  PROFILE_CCT_2DIM = 1,  // CCT on CH1+CH2, dimmers on CH3, CH4
+  PROFILE_2XCCT    = 2,  // CCT on CH1+CH2 and CH3+CH4
+  PROFILE_RGBW     = 3,  // R=CH3 G=CH2 B=CH1 W=CH4 (matches the legacy pin map)
+  PROFILE_RGB_DIM  = 4,  // RGB on CH3/CH2/CH1, dimmer on CH4
   PROFILE_COUNT    = 5
 };
 static const char *PROFILE_NAME[PROFILE_COUNT] = {
   "4XDIM", "CCT_2DIM", "2XCCT", "RGBW", "RGB_DIM"
 };
 
-/* Which profiles this build can actually run. Extend as the phases land
- * (phase 2 adds CCT_2DIM). A write of anything else is REJECTED rather than
- * stored: accepting it would reboot the board into a profile it cannot honour
- * and leave Z2M showing a profile the device isn't running. */
+/* Which profiles this build can actually run — all of them as of v2. A write of
+ * anything outside this set is REJECTED rather than stored: accepting it would
+ * reboot the board into a profile it cannot honour and leave Z2M showing a
+ * profile the device isn't running. */
 static bool profileImplemented(uint16_t p) {
-  return p == PROFILE_4XDIM;
+  return p < PROFILE_COUNT;
 }
 
 static Profile   g_profile        = PROFILE_4XDIM;   // effective (what is running)
@@ -144,20 +157,29 @@ Preferences prefs;
 
 /* ============================================================
  *  ENDPOINTS
+ * ------------------------------------------------------------
+ *  The light endpoints depend on the profile, and C++ globals are constructed
+ *  unconditionally, so they are built with `new` in setup() once the profile is
+ *  known. Fixed endpoints (config/diagnostics/sensor) stay static.
  * ============================================================ */
-ZigbeeDimmableLight zbCh1(10);
-ZigbeeDimmableLight zbCh2(11);
-ZigbeeDimmableLight zbCh3(12);
-ZigbeeDimmableLight zbCh4(13);
-ZigbeeDimmableLight *zbCh[4] = { &zbCh1, &zbCh2, &zbCh3, &zbCh4 };
+ZigbeeDimmableLight      *zbDim[4] = { nullptr, nullptr, nullptr, nullptr };  // slot -> dimmer
+ZigbeeColorDimmableLight *zbCct[2] = { nullptr, nullptr };                    // slot -> CCT pair
+ZigbeeColorDimmableLight *zbRgb    = nullptr;                                 // RGB(W)
+ZigbeeEP                 *zbEp10   = nullptr;   // whichever endpoint owns EP10 (carries OTA)
 
 ZigbeeMultistate  zbCfg(14);    // profile selector
 ZigbeeAnalog      zbDiag(15);   // brownout counter
 ZigbeeTempSensor  zbDie(16);    // die temperature
 ZigbeeTempSensor  zbRoom(20);   // AM2320 (added only when present)
 
+/* Channel mapping for the running profile. 0xFF = unused. */
+static uint8_t g_dimCh[4]  = {0xFF, 0xFF, 0xFF, 0xFF};   // dimmer slot -> channel
+static uint8_t g_cctCool[2] = {0xFF, 0xFF};
+static uint8_t g_cctWarm[2] = {0xFF, 0xFF};
+static uint8_t g_rgbR = 0xFF, g_rgbG = 0xFF, g_rgbB = 0xFF, g_rgbW = 0xFF;
+
 /* ============================================================
- *  PWM OUTPUT
+ *  PWM OUTPUT + TRANSITION RAMP
  * ============================================================ */
 /* Perceptual curve: Zigbee CurrentLevel is linear, human brightness is not.
  * gamma 2.2 keeps the bottom of the range usable on LED strips (a linear duty
@@ -170,23 +192,102 @@ static uint32_t levelToDuty(uint8_t level) {
   return d ? d : 1;  // never round a non-zero level down to fully off
 }
 
-/* Single seam for every output write — phase 2's transition ramp slots in here
- * (target vs current + a stepper in loop()) without touching the callbacks. */
-static void applyChannel(uint8_t ch, bool state, uint8_t level) {
+/* Each channel ramps linearly from where it was to where it is going, so a
+ * command is a fast fade rather than a step. stepRamps() runs from loop(). */
+struct ChannelRamp {
+  uint16_t from;
+  uint16_t to;
+  uint16_t cur;
+  unsigned long t0;
+};
+static ChannelRamp g_ramp[4];
+
+/* The single seam every output write goes through. */
+static void applyDuty(uint8_t ch, uint32_t duty) {
   if (ch >= 4) return;
-  ledcWrite(CH_PIN[ch], state ? levelToDuty(level) : 0);
+  if (duty > DUTY_MAX) duty = DUTY_MAX;
+  ChannelRamp &r = g_ramp[ch];
+  if (r.to == duty) return;
+  r.from = r.cur;
+  r.to = (uint16_t)duty;
+  r.t0 = millis();
 }
 
-static void onCh(uint8_t ch, bool state, uint8_t level) {
-  Serial.printf("CH%u -> %s level=%u\n", ch + 1, state ? "ON" : "OFF", level);
-  applyChannel(ch, state, level);
+static void stepRamps() {
+  const unsigned long now = millis();
+  for (uint8_t ch = 0; ch < 4; ch++) {
+    ChannelRamp &r = g_ramp[ch];
+    if (r.cur == r.to) continue;
+    const unsigned long elapsed = now - r.t0;
+    uint16_t next;
+    if (elapsed >= RAMP_MS) {
+      next = r.to;
+    } else {
+      const int32_t span = (int32_t)r.to - (int32_t)r.from;
+      next = (uint16_t)((int32_t)r.from + (span * (int32_t)elapsed) / (int32_t)RAMP_MS);
+    }
+    if (next != r.cur) {
+      r.cur = next;
+      ledcWrite(CH_PIN[ch], r.cur);
+    }
+  }
 }
-/* onLightChange takes a bare function pointer (no user context), so one thunk
- * per channel. */
-static void onCh1(bool s, uint8_t l) { onCh(0, s, l); }
-static void onCh2(bool s, uint8_t l) { onCh(1, s, l); }
-static void onCh3(bool s, uint8_t l) { onCh(2, s, l); }
-static void onCh4(bool s, uint8_t l) { onCh(3, s, l); }
+
+/* ---- dimmer ---- */
+static void setDimmer(uint8_t slot, bool state, uint8_t level) {
+  const uint8_t ch = g_dimCh[slot];
+  if (ch == 0xFF) return;
+  Serial.printf("DIM%u (CH%u) -> %s level=%u\n", slot + 1, ch + 1, state ? "ON" : "OFF", level);
+  applyDuty(ch, state ? levelToDuty(level) : 0);
+}
+
+/* ---- CCT: mireds -> cool/warm mix ----
+ * ratio 0 = fully cool, 1 = fully warm. The two duties sum to the requested
+ * level, so perceived output stays roughly constant as colour temperature
+ * moves — mixing at full duty on both would jump brighter mid-range. */
+static void setCct(uint8_t slot, bool state, uint8_t level, uint16_t mireds) {
+  const uint8_t cool = g_cctCool[slot], warm = g_cctWarm[slot];
+  if (cool == 0xFF || warm == 0xFF) return;
+  if (mireds < MIRED_MIN) mireds = MIRED_MIN;
+  if (mireds > MIRED_MAX) mireds = MIRED_MAX;
+  const float ratio = (float)(mireds - MIRED_MIN) / (float)(MIRED_MAX - MIRED_MIN);
+  const uint32_t duty = state ? levelToDuty(level) : 0;
+  Serial.printf("CCT%u (CH%u/CH%u) -> %s level=%u mireds=%u (warm %.0f%%)\n",
+                slot + 1, cool + 1, warm + 1, state ? "ON" : "OFF", level, mireds, ratio * 100.0f);
+  applyDuty(cool, (uint32_t)(duty * (1.0f - ratio)));
+  applyDuty(warm, (uint32_t)(duty * ratio));
+}
+
+/* ---- RGB(W) ----
+ * Classic RGBW conversion: the common part of R/G/B is what a dedicated white
+ * channel does better (higher CRI, more output, less power), so pull it out and
+ * drive W with it. On RGB_DIM there is no W channel and the colour is left as
+ * sent. */
+static void setRgb(bool state, uint8_t r, uint8_t g, uint8_t b, uint8_t level) {
+  const float scale = state ? (float)levelToDuty(level) / (float)DUTY_MAX : 0.0f;
+  uint8_t w = 0;
+  if (g_rgbW != 0xFF) {
+    w = r < g ? (r < b ? r : b) : (g < b ? g : b);   // min(r,g,b)
+    r -= w; g -= w; b -= w;
+  }
+  Serial.printf("RGB%s -> %s r=%u g=%u b=%u%s level=%u\n",
+                g_rgbW != 0xFF ? "W" : "", state ? "ON" : "OFF", r, g, b,
+                g_rgbW != 0xFF ? "" : " (no W)", level);
+  if (g_rgbR != 0xFF) applyDuty(g_rgbR, (uint32_t)(r * scale * DUTY_MAX / 255.0f));
+  if (g_rgbG != 0xFF) applyDuty(g_rgbG, (uint32_t)(g * scale * DUTY_MAX / 255.0f));
+  if (g_rgbB != 0xFF) applyDuty(g_rgbB, (uint32_t)(b * scale * DUTY_MAX / 255.0f));
+  if (g_rgbW != 0xFF) applyDuty(g_rgbW, (uint32_t)(w * scale * DUTY_MAX / 255.0f));
+}
+
+/* The endpoint callbacks are bare function pointers with no user context, so
+ * one thunk per slot. */
+static void onDim0(bool s, uint8_t l) { setDimmer(0, s, l); }
+static void onDim1(bool s, uint8_t l) { setDimmer(1, s, l); }
+static void onDim2(bool s, uint8_t l) { setDimmer(2, s, l); }
+static void onDim3(bool s, uint8_t l) { setDimmer(3, s, l); }
+static void onCct0(bool s, uint8_t l, uint16_t t) { setCct(0, s, l, t); }
+static void onCct1(bool s, uint8_t l, uint16_t t) { setCct(1, s, l, t); }
+static void onRgbCb(bool s, uint8_t r, uint8_t g, uint8_t b, uint8_t l) { setRgb(s, r, g, b, l); }
 
 /* ============================================================
  *  PROFILE SELECTOR (EP14)
@@ -348,15 +449,64 @@ void setup() {
     ? "detected -> EP20"
     : "absent (EP20 omitted; if a sensor is fitted, reboot + re-interview in Z2M)");
 
-  // 4. Light endpoints, one per channel (4XDIM)
-  for (uint8_t i = 0; i < 4; i++) {
-    zbCh[i]->setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
-    zbCh[i]->setPowerSource(ZB_POWER_SOURCE_MAINS);   // it is a mains-powered router
+  // 4. Light endpoints for the running profile. Endpoint NUMBERS are reserved by
+  //    role (10..13) so a given slot always lands on the same endpoint no matter
+  //    which profile is running — a CCT light on EP10 replaces the dimmer that
+  //    would otherwise be there, and EP11 simply does not exist because CH2 is
+  //    its warm half.
+  auto newDim = [&](uint8_t slot, uint8_t endpoint, uint8_t ch) {
+    g_dimCh[slot] = ch;
+    zbDim[slot] = new ZigbeeDimmableLight(endpoint);
+    zbDim[slot]->setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
+    zbDim[slot]->setPowerSource(ZB_POWER_SOURCE_MAINS);   // mains-powered router
+  };
+  auto newCct = [&](uint8_t slot, uint8_t endpoint, uint8_t cool, uint8_t warm) {
+    g_cctCool[slot] = cool;
+    g_cctWarm[slot] = warm;
+    zbCct[slot] = new ZigbeeColorDimmableLight(endpoint);
+    zbCct[slot]->setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
+    zbCct[slot]->setPowerSource(ZB_POWER_SOURCE_MAINS);
+    // Colour-temperature ONLY: advertising hue/saturation on a two-channel white
+    // strip would let HA ask for colours the hardware cannot make.
+    zbCct[slot]->setLightColorCapabilities(ZIGBEE_COLOR_CAPABILITY_COLOR_TEMP);
+    zbCct[slot]->setLightColorTemperatureRange(MIRED_MIN, MIRED_MAX);
+  };
+  auto newRgb = [&](uint8_t endpoint, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
+    g_rgbR = r; g_rgbG = g; g_rgbB = b; g_rgbW = w;
+    zbRgb = new ZigbeeColorDimmableLight(endpoint);
+    zbRgb->setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
+    zbRgb->setPowerSource(ZB_POWER_SOURCE_MAINS);
+    zbRgb->setLightColorCapabilities(ZIGBEE_COLOR_CAPABILITY_HUE_SATURATION |
+                                     ZIGBEE_COLOR_CAPABILITY_X_Y);
+  };
+
+  switch (g_profile) {
+    case PROFILE_4XDIM:
+      newDim(0, 10, 0); newDim(1, 11, 1); newDim(2, 12, 2); newDim(3, 13, 3);
+      break;
+    case PROFILE_CCT_2DIM:
+      newCct(0, 10, 0, 1);                 // CH1 cool + CH2 warm
+      newDim(2, 12, 2); newDim(3, 13, 3);  // CH3, CH4 stay independent dimmers
+      break;
+    case PROFILE_2XCCT:
+      newCct(0, 10, 0, 1);                 // CH1 cool + CH2 warm
+      newCct(1, 12, 2, 3);                 // CH3 cool + CH4 warm
+      break;
+    case PROFILE_RGBW:
+      newRgb(10, 2, 1, 0, 3);              // R=CH3 G=CH2 B=CH1 W=CH4 (legacy pin map)
+      break;
+    case PROFILE_RGB_DIM:
+      newRgb(10, 2, 1, 0, 0xFF);           // R=CH3 G=CH2 B=CH1, no white
+      newDim(3, 13, 3);                    // CH4 independent dimmer
+      break;
+    default:
+      break;
   }
-  zbCh1.onLightChange(onCh1);
-  zbCh2.onLightChange(onCh2);
-  zbCh3.onLightChange(onCh3);
-  zbCh4.onLightChange(onCh4);
+  void (*dimCb[4])(bool, uint8_t) = {onDim0, onDim1, onDim2, onDim3};
+  for (uint8_t i = 0; i < 4; i++) if (zbDim[i]) zbDim[i]->onLightChange(dimCb[i]);
+  if (zbCct[0]) zbCct[0]->onLightChangeTemp(onCct0);
+  if (zbCct[1]) zbCct[1]->onLightChangeTemp(onCct1);
+  if (zbRgb)    zbRgb->onLightChangeRgb(onRgbCb);
 
   // 5. Profile selector
   zbCfg.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
@@ -381,15 +531,20 @@ void setup() {
     zbRoom.addHumiditySensor(0, 100, 1.0, 0);
   }
 
-  // 8. OTA client on EP10 — ships in v1 on purpose: flashing Zigbee removes the
-  //    WiFi OTA path, and most of these boards are behind furniture.
-  zbCh1.addOTAClient(OTA_FW_RUNNING, OTA_FW_DOWNLOADED, OTA_HW_VERSION,
-                     OTA_MANUFACTURER, OTA_IMAGE_TYPE);
+  // 8. OTA client goes on whichever endpoint owns EP10 in this profile. It ships
+  //    from v1 on purpose: flashing Zigbee removes the WiFi OTA path, and most of
+  //    these boards are behind furniture.
+  zbEp10 = zbDim[0] ? (ZigbeeEP *)zbDim[0]
+         : zbCct[0] ? (ZigbeeEP *)zbCct[0]
+         : (ZigbeeEP *)zbRgb;
+  if (zbEp10) {
+    zbEp10->addOTAClient(OTA_FW_RUNNING, OTA_FW_DOWNLOADED, OTA_HW_VERSION,
+                         OTA_MANUFACTURER, OTA_IMAGE_TYPE);
+  }
 
-  Zigbee.addEndpoint(&zbCh1);
-  Zigbee.addEndpoint(&zbCh2);
-  Zigbee.addEndpoint(&zbCh3);
-  Zigbee.addEndpoint(&zbCh4);
+  for (uint8_t i = 0; i < 4; i++) if (zbDim[i]) Zigbee.addEndpoint(zbDim[i]);
+  for (uint8_t i = 0; i < 2; i++) if (zbCct[i]) Zigbee.addEndpoint(zbCct[i]);
+  if (zbRgb) Zigbee.addEndpoint(zbRgb);
   Zigbee.addEndpoint(&zbCfg);
   Zigbee.addEndpoint(&zbDiag);
   Zigbee.addEndpoint(&zbDie);
@@ -410,15 +565,18 @@ void setup() {
   zbCfg.setMultistateOutput(g_profileStored);
   zbDiag.setAnalogInput((float)g_brownoutCount);
 
-  // 10. Restore each channel from its persisted attributes so a power cut does
-  //     not leave strips in a surprise state. This fires the change callbacks,
-  //     which drive the PWM. (Proper StartUpOnOff/StartUpCurrentLevel handling
-  //     is phase 2.)
-  for (uint8_t i = 0; i < 4; i++) zbCh[i]->restoreLight();
+  // 10. Restore each light from its persisted attributes so a power cut does not
+  //     leave strips in a surprise state. This fires the change callbacks, which
+  //     drive the PWM.
+  for (uint8_t i = 0; i < 4; i++) if (zbDim[i]) zbDim[i]->restoreLight();
+  for (uint8_t i = 0; i < 2; i++) if (zbCct[i]) zbCct[i]->restoreLight();
+  if (zbRgb) zbRgb->restoreLight();
 }
 
 void loop() {
   const unsigned long now = millis();
+
+  stepRamps();   // transition ramp for all four PWM channels
 
   // Deferred profile reboot — see onProfileWrite().
   if (g_rebootPending && (long)(now - g_rebootAt) >= 0) {
