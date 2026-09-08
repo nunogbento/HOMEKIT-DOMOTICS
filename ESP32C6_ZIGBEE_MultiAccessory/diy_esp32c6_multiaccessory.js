@@ -68,7 +68,7 @@ const asDevice = (device) => (device && typeof device.getEndpoint === 'function'
  * because the UI then re-sent that, the colour walked to the white point. Read
  * the wrong attributes and you don't get stale data, you get a feedback loop. */
 const colourAttrs = (device, id) =>
-  lightKind(device, id) === 'cct' ? ['colorMode', 'colorTemperature'] : ['colorMode', 'currentX', 'currentY'];
+  lightKind(device, id) === 'cct' ? ['colorMode', 'colorTemperature'] : ['colorMode', 'currentHue', 'currentSaturation'];
 
 const hasEp = (device, id) => {
   const d = asDevice(device);
@@ -312,7 +312,12 @@ module.exports = [
     toZigbee: [tz.light_onoff_brightness, tz.light_color_colortemp, tz.light_colortemp_startup,
                tzProfile, tzMask, tzAc, tzAcEnabled],
     ota: true,
-    meta: {multiEndpoint: true},
+    /* supportsHueAndSaturation defaults to FALSE, and tz.light_color checks THIS,
+     * not the device's colorCapabilities. Without it Z2M converts every colour to
+     * xy and sends moveToColor no matter what the device advertises — so the
+     * device stored xy while the UI's picker worked in hue/saturation, and the
+     * picker could never be positioned. */
+    meta: {multiEndpoint: true, supportsHueAndSaturation: true},
     /* color_sync (default ON) makes Z2M recompute every colour representation
      * after each update, using BOTH the new and the CACHED state to decide what
      * to synthesise. On an endpoint that has been a CCT light and an hs light at
@@ -337,8 +342,8 @@ module.exports = [
          * jumped somewhere else after every click. One model, the true one. */
         const expose =
           kind === 'cct'       ? e.light_brightness_colortemp([153, 500]) :
-          kind === 'color'     ? e.light_brightness_colorxy() :
-          kind === 'color_cct' ? e.light_brightness_colortemp_colorxy([153, 500]) :
+          kind === 'color'     ? e.light_brightness_colorhs() :
+          kind === 'color_cct' ? e.light_brightness_colortemp_colorhs([153, 500]) :
                                  e.light_brightness();
         list.push(expose.withEndpoint(name));
       }

@@ -693,8 +693,12 @@ void setup() {
     zbRgb = new ZigbeeColorDimmableLight(endpoint);
     zbRgb->setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
     zbRgb->setPowerSource(ZB_POWER_SOURCE_MAINS);
-    zbRgb->setLightColorCapabilities(ZIGBEE_COLOR_CAPABILITY_HUE_SATURATION |
-                                     ZIGBEE_COLOR_CAPABILITY_X_Y);
+    /* HUE/SAT ONLY — deliberately NOT X_Y. With XY advertised, Z2M converts every
+     * colour to xy and sends moveToColor, so the device stores xy while the UI's
+     * picker works in hue/saturation; the two models never meet and the picker
+     * cannot be positioned. Advertising hue/sat alone makes Z2M send
+     * moveToHueAndSaturation, so the device stores what the UI actually uses. */
+    zbRgb->setLightColorCapabilities(ZIGBEE_COLOR_CAPABILITY_HUE_SATURATION);
   };
 
   switch (g_profile) {
