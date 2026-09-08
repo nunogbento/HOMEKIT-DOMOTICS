@@ -1,0 +1,4 @@
+(sym_lib_table
+	(version 7)
+	(lib (name "mqtt-LightbulbwithtempandIR-eagle-import") (type "KiCad") (uri "${KIPRJMOD}/mqtt-LightbulbwithtempandIR-eagle-import.kicad_sym") (options "") (descr ""))
+)
