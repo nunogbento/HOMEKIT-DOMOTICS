@@ -350,12 +350,14 @@ module.exports = [
       list.push(exposes.enum('profile', ea.ALL, PROFILES)
         .withDescription('Output profile. Stored in NVS; the board REBOOTS to apply it and must then be ' +
           're-interviewed in Z2M, because Zigbee fixes endpoint composition at interview time. ' +
-          `Implemented in firmware v1: ${PROFILES_IMPLEMENTED.join(', ')} — anything else falls back to 4XDIM.`));
+          `Implemented in firmware v1: ${PROFILES_IMPLEMENTED.join(', ')} — anything else falls back to 4XDIM.`)
+        .withCategory('config'));
       list.push(exposes.numeric('channels', ea.ALL).withValueMin(1).withValueMax(15)
         .withDescription('Which PWM channels are actually populated on this board, as a bitmask: ' +
           'bit0=CH1, bit1=CH2, bit2=CH3, bit3=CH4. A board with one strip is 1; the studio board, ' +
           'wired on CH1+CH3, is 5; all four is 15. A CCT pair needs both of its channels set. ' +
-          'Stored in NVS; the board REBOOTS to apply and must then be re-interviewed.'));
+          'Stored in NVS; the board REBOOTS to apply and must then be re-interviewed.')
+        .withCategory('config'));
       list.push(exposes.numeric('brownout_count', ea.STATE)
         .withDescription('Brownout/unexpected resets since flash')
         .withCategory('diagnostic'));
@@ -381,7 +383,8 @@ module.exports = [
       }
       list.push(exposes.binary('ac_enabled', ea.ALL, 'ON', 'OFF')
         .withDescription('Is an LG split wired to this board\'s IR LED? IR cannot be probed, so this ' +
-          'is a stored setting. The board REBOOTS to apply and must then be re-interviewed.'));
+          'is a stored setting. The board REBOOTS to apply and must then be re-interviewed.')
+        .withCategory('config'));
       // Room sensor only on boards where the AM2320 was auto-detected.
       if (hasEp(device, EP.room)) {
         list.push(e.temperature(), e.humidity());
