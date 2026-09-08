@@ -303,6 +303,14 @@ module.exports = [
                tzProfile, tzMask, tzAc, tzAcEnabled],
     ota: true,
     meta: {multiEndpoint: true},
+    /* color_sync (default ON) makes Z2M recompute every colour representation
+     * after each update, using BOTH the new and the CACHED state to decide what
+     * to synthesise. On an endpoint that has been a CCT light and an hs light at
+     * various times, that means every xy you set gets round-tripped through
+     * hue/saturation and colour temperature the endpoint no longer has — which
+     * is what dragged the UI sliders away from where they were clicked. Exposing
+     * the option lets it be turned off so the commanded value is kept verbatim. */
+    options: [exposes.options.color_sync()],
     endpoint: () => ({...EP}),
     exposes: (device) => {
       const list = [];

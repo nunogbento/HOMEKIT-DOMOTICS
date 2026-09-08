@@ -10,7 +10,7 @@
  * loop() confirms it only after OTA_VALIDATE_MS of healthy joined uptime. */
 
 /*
- * ESP32-C6 ZIGBEE MULTIACCESSORY  (v3, 0x01000002)  — T-0036
+ * ESP32-C6 ZIGBEE MULTIACCESSORY  (v5, 0x01000003)  — T-0036
  * =========================================================
  * Zigbee replacement for the WiFi/HomeKit (HomeSpan) MultiAccessory firmware.
  * Mains/12 V powered WT0132C6-S5 (ESP32-C6 in the ESP-12F footprint) — joins as
@@ -155,8 +155,8 @@ static const char *AC_MODE_NAME[AC_MODE_COUNT] = {"off", "cool", "heat", "dry", 
  * 0x1011 so the two DIY devices never see each other's images in the Z2M
  * ota_override index. BUMP OTA_FW_RUNNING EVERY RELEASE (Z2M only offers a
  * strictly-higher fileVersion). */
-#define OTA_FW_RUNNING     0x01000002
-#define OTA_FW_DOWNLOADED  0x01000003
+#define OTA_FW_RUNNING     0x01000003
+#define OTA_FW_DOWNLOADED  0x01000004
 #define OTA_HW_VERSION     0x0101
 #define OTA_MANUFACTURER   0x1001
 #define OTA_IMAGE_TYPE     0x1012
@@ -646,6 +646,7 @@ void setup() {
     prefs.putUShort("profile", PROFILE_4XDIM);
     prefs.end();
   }
+  Serial.printf("Firmware 0x%08lX\n", (unsigned long)OTA_FW_RUNNING);
   Serial.printf("Boot: reset_reason=%d brownout_count=%u profile=%s(stored %u) chmask=0b%c%c%c%c\n",
                 (int)rr, g_brownoutCount, PROFILE_NAME[g_profile], g_profileStored,
                 (g_chMask & 8) ? '1' : '0', (g_chMask & 4) ? '1' : '0',
