@@ -81,23 +81,24 @@
  *  numbers behind the pads differ: ch 13/14/16/12 -> 6/5/4/2, IR 10 -> 21,
  *  SDA 4/SCL 5 -> 10/3.
  * ============================================================ */
-/* Channel -> GPIO. The board's OUTPUT TERMINAL ORDER is, per the silkscreen:
+/* Channel -> GPIO, and which LED each one actually drives.
  *
- *      +12V | G = IO2 | R = IO4 | B = IO5 | W = IO6
+ * MEASURED ON THE HARDWARE 2026-09-08 with an RGBW strip connected, driving one
+ * channel at a time. This supersedes BOTH earlier sources, which were wrong:
  *
- * That order is deliberate — it matches the pad order of a standard RGBW strip,
- * so a strip solders straight across with no crossed wires. THE SILKSCREEN IS
- * AUTHORITATIVE, and this map was **CONFIRMED ON THE HARDWARE 2026-09-07** with a
- * channel walk (each channel blinked its own number: 1=W, 2=B, 3=R, 4=G).
- * (The RGB defines in the legacy HomeSpan Configuration.h — WHITE=2, RED=4,
- * GREEN=5, BLUE=6 — disagree on three of four; no RGBW board is live any more, so
- * those were renumbered for the C6 and never exercised. Its CCT/dimmer defines ARE
- * proven, and are kept below.)
+ *   endpoint  GPIO   ACTUAL colour     silkscreen said   legacy config said
+ *   l1/CH1    IO6    BLUE              W                 BLUE
+ *   l2/CH2    IO5    WHITE             B                 GREEN
+ *   l3/CH3    IO4    GREEN             R                 RED
+ *   l4/CH4    IO2    RED               G                 WHITE
  *
- *   CH1 = IO6 = "W" terminal   (legacy L1PIN / cw1)
- *   CH2 = IO5 = "B" terminal   (legacy ww1)
- *   CH3 = IO4 = "R" terminal   (legacy L2PIN / cw2)
- *   CH4 = IO2 = "G" terminal   (legacy ww2)
+ * i.e. relative to the silkscreen the pairs are transposed (G<->R and B<->W).
+ * Reading the labels off the board made green come out red. Do NOT "fix" this
+ * back to the silkscreen order without re-measuring: label order and driver
+ * order do not agree on this board.
+ *
+ * The CCT pairs are unaffected — a CCT strip just needs two channels, and pair 2
+ * (CH3+CH4 = IO4+IO2, the terminals marked G and R) is confirmed working.
  */
 static const uint8_t CH_PIN[4] = { 6, 5, 4, 2 };  // CH1..CH4  (IO6, IO5, IO4, IO2)
 #define IR_LED_PIN   21                            // phase 3
@@ -170,8 +171,8 @@ enum Profile : uint16_t {
   PROFILE_4XDIM    = 0,  // 4 independent dimmers
   PROFILE_CCT_2DIM = 1,  // CCT on CH1+CH2, dimmers on CH3, CH4
   PROFILE_2XCCT    = 2,  // CCT on CH1+CH2 and CH3+CH4
-  PROFILE_RGBW     = 3,  // R=IO4 G=IO2 B=IO5 W=IO6 (the board's terminal order)
-  PROFILE_RGB_DIM  = 4,  // RGB as above, dimmer on the spare "W" terminal (IO6)
+  PROFILE_RGBW     = 3,  // R=IO2 G=IO4 B=IO6 W=IO5 (measured, not the silkscreen)
+  PROFILE_RGB_DIM  = 4,  // RGB as above, dimmer on the spare white channel (IO5)
   PROFILE_COUNT    = 5
 };
 static const char *PROFILE_NAME[PROFILE_COUNT] = {
@@ -326,7 +327,30 @@ static void setCct(uint8_t slot, bool state, uint8_t level, uint16_t mireds) {
  * channel does better (higher CRI, more output, less power), so pull it out and
  * drive W with it. On RGB_DIM there is no W channel and the colour is left as
  * sent. */
+/* moveToColor writes currentX and currentY as SEPARATE attributes, and the
+ * endpoint class fires the change callback after each one — so the first call
+ * computes a colour from the new x with the STALE y and briefly drives a wrong
+ * colour (bench: a green target flashed cyan before settling). Hold the latest
+ * request for a few ms and apply once things have settled. */
+#define RGB_COALESCE_MS 60UL
+static bool     g_rgbPending = false;
+static unsigned long g_rgbAt = 0;
+static bool     g_rgbState = false;
+static uint8_t  g_rgbR8 = 0, g_rgbG8 = 0, g_rgbB8 = 0, g_rgbLevel = 0;
+
+static void applyRgbNow();
+
 static void setRgb(bool state, uint8_t r, uint8_t g, uint8_t b, uint8_t level) {
+  g_rgbState = state; g_rgbR8 = r; g_rgbG8 = g; g_rgbB8 = b; g_rgbLevel = level;
+  g_rgbAt = millis() + RGB_COALESCE_MS;
+  g_rgbPending = true;
+}
+
+static void applyRgbNow() {
+  g_rgbPending = false;
+  const bool state = g_rgbState;
+  uint8_t r = g_rgbR8, g = g_rgbG8, b = g_rgbB8;
+  const uint8_t level = g_rgbLevel;
   const float scale = state ? (float)levelToDuty(level) / (float)DUTY_MAX : 0.0f;
   uint8_t w = 0;
   if (g_rgbW != 0xFF) {
@@ -687,13 +711,13 @@ void setup() {
       newCct(1, 12, 2, 3);                 // CH3 cool (IO4/R) + CH4 warm (IO2/G)
       break;
     case PROFILE_RGBW:
-      // Follows the silkscreen: R=IO4(CH3) G=IO2(CH4) B=IO5(CH2) W=IO6(CH1).
-      newRgb(10, 2, 3, 1, 0);
+      // MEASURED: R=IO2(CH4) G=IO4(CH3) B=IO6(CH1) W=IO5(CH2).
+      newRgb(10, 3, 2, 0, 1);
       break;
     case PROFILE_RGB_DIM:
-      // Same R/G/B as RGBW; the spare channel is the "W" terminal (IO6/CH1).
-      newRgb(10, 2, 3, 1, 0xFF);
-      newDim(3, 13, 0);                    // dimmer on IO6 ("W" terminal)
+      // Same R/G/B; the spare channel is the white one, IO5 (CH2).
+      newRgb(10, 3, 2, 0, 0xFF);
+      newDim(3, 13, 1);                    // dimmer on IO5 (the white channel)
       break;
     default:
       break;
@@ -831,6 +855,9 @@ void loop() {
   const unsigned long now = millis();
 
   stepRamps();   // transition ramp for all four PWM channels
+
+  // Apply a coalesced colour change once x and y have both landed.
+  if (g_rgbPending && (long)(now - g_rgbAt) >= 0) applyRgbNow();
 
   // Coalesced IR frame for the AC (see acTouch()).
   if (g_acDirty && (long)(now - g_acSendAt) >= 0) acSendNow();

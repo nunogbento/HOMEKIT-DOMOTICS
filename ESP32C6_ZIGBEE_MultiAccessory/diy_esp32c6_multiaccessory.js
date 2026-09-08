@@ -49,6 +49,7 @@ const POLL_TICK_MS = 60 * 1000;
 const DIE_TEMP_TICKS = 5;    // 5 min
 const ROOM_TICKS = 3;        // 3 min (firmware refreshes the AM2320 every 2 min)
 const DIAG_TICKS = 30;       // 30 min — only changes on a brownout
+const COLOUR_TICKS = 2;      // 2 min — nothing is reported, so colour state is polled
 
 // exposes() is called from Z2M's resolveDevicesDefinitions() as well as for real
 // devices, and not every caller passes a zigbee-herdsman Device — some pass an
@@ -310,10 +311,16 @@ module.exports = [
       for (const [name, id] of LIGHT_EPS) {
         if (!hasEp(device, id)) continue;
         const kind = lightKind(device, id);
+        /* XY ONLY for colour, deliberately. The device is xy-native: it reports
+         * colorMode 1 and its currentX/currentY round-trip EXACTLY (verified on
+         * the bench), but it never updates currentHue/currentSaturation — they
+         * sit at 0/0 whatever colour is set. Exposing color_hs as well gave the
+         * UI a second colour model that was permanently wrong, so the picker
+         * jumped somewhere else after every click. One model, the true one. */
         const expose =
           kind === 'cct'       ? e.light_brightness_colortemp([153, 500]) :
-          kind === 'color'     ? e.light_brightness_colorhs() :
-          kind === 'color_cct' ? e.light_brightness_colortemp_colorhs([153, 500]) :
+          kind === 'color'     ? e.light_brightness_colorxy() :
+          kind === 'color_cct' ? e.light_brightness_colortemp_colorxy([153, 500]) :
                                  e.light_brightness();
         list.push(expose.withEndpoint(name));
       }
@@ -365,6 +372,10 @@ module.exports = [
         // Cache colorCapabilities so lightKind() can tell CCT from RGB. Harmless
         // on a plain dimmer endpoint (no such cluster -> the read just fails).
         await readSafe(id, 'lightingColorCtrl', ['colorCapabilities']);
+        // ...and the actual colour state, so the UI picker starts populated. The
+        // device never reports, so without this there is no colour state at all.
+        await readSafe(id, 'lightingColorCtrl',
+                       ['colorMode', 'currentX', 'currentY', 'currentHue', 'currentSaturation', 'colorTemperature']);
       }
       await readSafe(EP.cfg, 'genMultistateOutput', ['presentValue']);
       await readSafe(EP.mask, 'genAnalogOutput', ['presentValue']);
@@ -456,6 +467,15 @@ module.exports = [
           await read(EP.room, 'msRelativeHumidity', ['measuredValue']);
         }
         if (tick % DIAG_TICKS === 0) await read(EP.diag, 'genAnalogInput', ['presentValue']);
+        // Colour state, for the same reason: nothing is reported, so poll it.
+        if (tick % COLOUR_TICKS === 0) {
+          for (const [, id] of LIGHT_EPS) {
+            const ep = device.getEndpoint(id);
+            if (!ep || !(ep.supportsInputCluster && ep.supportsInputCluster('lightingColorCtrl'))) continue;
+            await read(id, 'lightingColorCtrl',
+                       ['colorMode', 'currentX', 'currentY', 'currentHue', 'currentSaturation', 'colorTemperature']);
+          }
+        }
       }, POLL_TICK_MS);
       globalStore.putValue(device, 'poll', h);
     },
