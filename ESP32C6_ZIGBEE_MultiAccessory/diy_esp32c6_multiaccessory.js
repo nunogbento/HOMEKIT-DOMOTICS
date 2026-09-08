@@ -298,7 +298,8 @@ module.exports = [
     description: 'ESP32-C6 MultiAccessory — 4 PWM channels, IR AC and AM2320, Zigbee router',
     fromZigbee: [fz.on_off, fz.brightness, fz.color_colortemp, fzMultistateOutput, fzAnalogOutput,
                  fzBinaryOutput, fzFanMode, fzTemperature, fzHumidity, fzBrownout],
-    toZigbee: [tz.light_onoff_brightness, tz.light_color_colortemp, tzProfile, tzMask, tzAc, tzAcEnabled],
+    toZigbee: [tz.light_onoff_brightness, tz.light_color_colortemp, tz.light_colortemp_startup,
+               tzProfile, tzMask, tzAc, tzAcEnabled],
     ota: true,
     meta: {multiEndpoint: true},
     endpoint: () => ({...EP}),
@@ -396,8 +397,34 @@ module.exports = [
       /* Z2M computes exposes right after the interview, BEFORE configure() runs,
        * so colorCapabilities isn't cached yet and lightKind() falls back to CCT —
        * an RGBW board would render as a colour-temperature light. Read the
-       * capability once here and ask Z2M to recompute the exposes afterwards. */
-      if (!globalStore.hasValue(device, 'caps')) {
+       * capability here and ask Z2M to recompute the exposes afterwards.
+       *
+       * This MUST re-run on every deviceInterview, not just once per session:
+       * changing the output profile changes what EP10 is (a CCT light in
+       * CCT_2DIM, a colour light in RGBW), and the cached capability from the
+       * previous profile is then wrong — a CCT strip rendered as hue/saturation. */
+      /* A profile / channel-mask / ac_enabled write REBOOTS the board, and nothing
+       * pushes the new values back afterwards (this firmware never reports — see
+       * the header). Z2M would therefore keep showing the pre-reboot values until
+       * something read them. deviceAnnounce fires when the board rejoins after
+       * that reboot, so re-read the config there and the UI self-heals.
+       * NOTE the endpoint SET still needs a re-interview — Zigbee only discovers
+       * endpoints at interview time — but at least the values stop lying. */
+      if (type === 'deviceAnnounce') {
+        (async () => {
+          for (const [id, cluster, attrs] of [
+            [EP.cfg, 'genMultistateOutput', ['presentValue']],
+            [EP.mask, 'genAnalogOutput', ['presentValue']],
+            [EP.acCfg, 'genBinaryOutput', ['presentValue']],
+          ]) {
+            const ep = device.getEndpoint(id);
+            if (!ep) continue;
+            try { await ep.read(cluster, attrs); } catch (err) { /* retried on the next announce */ }
+          }
+        })();
+      }
+
+      if (type === 'deviceInterview' || type === 'deviceJoined' || !globalStore.hasValue(device, 'caps')) {
         globalStore.putValue(device, 'caps', true);
         (async () => {
           let got = false;
