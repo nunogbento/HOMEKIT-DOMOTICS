@@ -122,13 +122,28 @@ static const uint8_t CH_PIN[4] = { 6, 5, 4, 2 };  // CH1..CH4  (IO6, IO5, IO4, I
 #define IR_CARRIER_DUTY 0.33f
 #define IR_RMT_TICK_HZ  1000000 // 1 tick = 1 us
 
-// LG2 (28-bit) frame timings, from ir_LG.cpp.
+// LG2 (28-bit) frame timings, from ir_LG.cpp. Used for the state frame.
 #define LG2_HDR_MARK   3200
 #define LG2_HDR_SPACE  9900
 #define LG2_BIT_MARK    480
 #define LG2_ONE_SPACE  1600
 #define LG2_ZERO_SPACE  550
 #define LG2_TAIL_SPACE 1000    // just terminates the last mark; nothing follows
+
+/* LG (28-bit) frame timings — the OLDER framing, needed for the swing command.
+ * The split accepts either framing for the state frame, but the swing codes only
+ * work in this one: the ESP8266 firmware that had working swing sent them with
+ * `irsend.sendLG()` (HKMultiAccessory/ACController.h), i.e. an 8500/4250 header,
+ * and the same codes in LG2 framing get ignored. */
+#define LG_HDR_MARK    8500
+#define LG_HDR_SPACE   4250
+#define LG_BIT_MARK     550
+#define LG_ONE_SPACE   1600
+#define LG_ZERO_SPACE   550
+
+/* kLgMinMessageLength is 108050 us: the split treats that as one message period,
+ * so a second command sent inside it is discarded as a repeat. */
+#define LG_MESSAGE_GAP_MS 110
 #define SDA_PIN      10
 #define SCL_PIN      3
 /* Status LED: IO8, ACTIVE LOW — owner-confirmed on this board. IO8 is a C6
@@ -246,6 +261,11 @@ static float     g_acSetpoint     = 24.0f;
 static uint8_t   g_acFan          = FAN_MODE_AUTO;
 static bool      g_acSwing        = false;
 static bool      g_acDirty        = false;
+static bool      g_acSentOnce     = false;  // has any frame gone out since boot?
+static uint16_t  g_acSentMode     = AC_OFF;  // what the split was last told
+static bool      g_acSentSwing    = false;
+static int       g_acSentTemp     = -1;
+static uint8_t   g_acSentFan      = 0xFF;
 static unsigned long g_acSendAt   = 0;
 
 Preferences prefs;
@@ -517,13 +537,22 @@ static void onMaskWrite(float value) {
  *  IR is one-way, so state is optimistic: whatever was last commanded is what
  *  we believe the split is doing.
  * ============================================================ */
+/* LG fan codes for AKB75215403. NOT the obvious Low/Medium/High constants:
+ * `kLgAcFanLow` (1) produced NO response at all from the split — not even the
+ * confirmation beep it gives for every command it understands — while medium and
+ * high worked. The library's own `setFan()` already rewrites `kLgAcFanHigh` (10)
+ * to `kLgAcFanMax` (4) for every model except AKB74955603, which says the codes
+ * this remote actually emits are the evenly-spaced 0 / 2 / 4 triplet; 1 and 9 are
+ * the AKB74955603-only intermediates. So low is `kLgAcFanLowest` (0).
+ * (The old HomeKit firmware used `kLgAcFanLow` too, so fan-low has silently never
+ * worked on these boards — this is an inherited bug, not a regression.) */
 static uint8_t acFanToLg(uint8_t fanMode) {
   switch (fanMode) {
     case FAN_MODE_OFF:
-    case FAN_MODE_LOW:    return kLgAcFanLow;
-    case FAN_MODE_MEDIUM: return kLgAcFanMedium;
-    case FAN_MODE_HIGH:   return kLgAcFanHigh;
-    default:              return kLgAcFanAuto;   // ON / AUTO / SMART
+    case FAN_MODE_LOW:    return kLgAcFanLowest;   // 0, was kLgAcFanLow (1) = no response
+    case FAN_MODE_MEDIUM: return kLgAcFanMedium;   // 2
+    case FAN_MODE_HIGH:   return kLgAcFanMax;      // 4 (what setFan() converts High to anyway)
+    default:              return kLgAcFanAuto;     // 5 — ON / AUTO / SMART
   }
 }
 
@@ -549,21 +578,32 @@ static bool irRmtBegin() {
   return true;
 }
 
-static void irRmtSendLg2(uint32_t code) {
+static void irRmtSend28(uint32_t code, uint16_t hdrMark, uint16_t hdrSpace,
+                        uint16_t bitMark, uint16_t oneSpace, uint16_t zeroSpace) {
   if (!g_irRmtReady) return;
   rmt_data_t sym[30];
   uint8_t n = 0;
-  sym[n].level0 = 1; sym[n].duration0 = LG2_HDR_MARK;
-  sym[n].level1 = 0; sym[n].duration1 = LG2_HDR_SPACE;   n++;
+  sym[n].level0 = 1; sym[n].duration0 = hdrMark;
+  sym[n].level1 = 0; sym[n].duration1 = hdrSpace;        n++;
   for (int8_t b = 27; b >= 0; b--) {                     // MSB first
     const bool one = (code >> b) & 1;
-    sym[n].level0 = 1; sym[n].duration0 = LG2_BIT_MARK;
-    sym[n].level1 = 0; sym[n].duration1 = one ? LG2_ONE_SPACE : LG2_ZERO_SPACE;
+    sym[n].level0 = 1; sym[n].duration0 = bitMark;
+    sym[n].level1 = 0; sym[n].duration1 = one ? oneSpace : zeroSpace;
     n++;
   }
-  sym[n].level0 = 1; sym[n].duration0 = LG2_BIT_MARK;
+  sym[n].level0 = 1; sym[n].duration0 = bitMark;
   sym[n].level1 = 0; sym[n].duration1 = LG2_TAIL_SPACE;  n++;
   rmtWrite(IR_LED_PIN, sym, n, RMT_WAIT_FOR_EVER);
+}
+
+static inline void irRmtSendLg2(uint32_t code) {   // state frame
+  irRmtSend28(code, LG2_HDR_MARK, LG2_HDR_SPACE, LG2_BIT_MARK,
+              LG2_ONE_SPACE, LG2_ZERO_SPACE);
+}
+
+static inline void irRmtSendLg(uint32_t code) {    // swing and the 0x88C... family
+  irRmtSend28(code, LG_HDR_MARK, LG_HDR_SPACE, LG_BIT_MARK,
+              LG_ONE_SPACE, LG_ZERO_SPACE);
 }
 
 /* Queue an IR frame. Several attribute writes usually arrive together (HA sets
@@ -576,9 +616,36 @@ static void acTouch() {
 static void acSendNow() {
   g_acDirty = false;
   if (!g_ir) return;
-  if (g_acMode == AC_OFF) {
+
+  /* Writing fan or swing while the split is off used to re-send the OFF command,
+   * which just made the unit beep for no reason and looked like the write had
+   * done something. If it is already off, stay quiet. */
+  if (g_acMode == AC_OFF && g_acSentOnce && g_acSentMode == AC_OFF) {
+    Serial.println("AC -> already off, nothing sent");
+    return;
+  }
+
+  /* Work out what actually changed. The old ESP8266 firmware sent ONLY the swing
+   * code on a swing change (`Ac_Change_Air_Swing()` never touches the state
+   * frame), and that is the version where swing worked — so a swing-only write
+   * must not be preceded by a state frame. It also stops the pointless beep. */
+  int wantTemp = (int)(g_acSetpoint + 0.5f);
+  if (wantTemp < kLgAcMinTemp) wantTemp = kLgAcMinTemp;
+  if (wantTemp > kLgAcMaxTemp) wantTemp = kLgAcMaxTemp;
+  const bool swingChanged = !g_acSentOnce || g_acSwing != g_acSentSwing;
+  const bool stateChanged = !g_acSentOnce || g_acMode != g_acSentMode
+                            || wantTemp != g_acSentTemp || g_acFan != g_acSentFan;
+
+  if (!stateChanged && !swingChanged) {
+    Serial.println("AC -> nothing changed, nothing sent");
+    return;
+  }
+
+  if (!stateChanged) {
+    // swing only — exactly what the working ESP8266 path did
+  } else if (g_acMode == AC_OFF) {
     g_ir->off();
-    Serial.println("AC -> OFF (IR sent)");
+    Serial.printf("AC -> OFF raw=0x%07lX\n", (unsigned long)kLgAcOffCommand);
   } else {
     g_ir->on();
     switch (g_acMode) {
@@ -588,16 +655,40 @@ static void acSendNow() {
       case AC_FAN_ONLY: g_ir->setMode(kLgAcFan);  break;
       default: break;
     }
-    int t = (int)(g_acSetpoint + 0.5f);
-    if (t < kLgAcMinTemp) t = kLgAcMinTemp;
-    if (t > kLgAcMaxTemp) t = kLgAcMaxTemp;
-    g_ir->setTemp(t);
+    g_ir->setTemp(wantTemp);          // clamped once, above
     g_ir->setFan(acFanToLg(g_acFan));
-    g_ir->setSwingV(g_acSwing);
-    Serial.printf("AC -> %s %d C fan=%u swing=%u (IR sent)\n",
-                  AC_MODE_NAME[g_acMode], t, g_acFan, g_acSwing ? 1 : 0);
+    Serial.printf("AC -> %s %d C fan=%u(lg=%u) raw=0x%07lX\n",
+                  AC_MODE_NAME[g_acMode], wantTemp, g_acFan, acFanToLg(g_acFan),
+                  (unsigned long)g_ir->getRaw());
   }
-  irRmtSendLg2(g_ir->getPower() ? g_ir->getRaw() : kLgAcOffCommand);
+  if (stateChanged)
+    irRmtSendLg2(g_ir->getPower() ? g_ir->getRaw() : kLgAcOffCommand);
+
+  /* SWING IS A SEPARATE, TOGGLING COMMAND IN LG FRAMING — captured from the
+   * real remote, not guessed. Pressing this split's swing button three times in
+   * a row put 0x8810001 on the wire every time (photodiode into a PicoScope,
+   * decoded with tools/picoscope/psanalyze.py --mode lg; header 8484/4204 us =
+   * LG framing, checksum valid). So:
+   *   - it is a TOGGLE, not the discrete on/off pair the ESP8266 firmware used
+   *   - the code is kLgAcSwingVToggle, which the library attributes to the
+   *     LG6711A20083V remote — nothing to do with AKB75215403's state frames
+   *   - the ESP8266 firmware's 0x8813149 / 0x881315A are kLgAcSwingSignature
+   *     codes belonging to the AKB74955603 remote, i.e. a different unit
+   *     entirely. That is why they never moved this vane.
+   * Being a toggle, our on/off state is optimistic and can desync if someone
+   * uses the physical remote — the same caveat as every other AC value here. */
+  if (g_acMode != AC_OFF && swingChanged) {
+    if (stateChanged) delay(LG_MESSAGE_GAP_MS);  // outside the previous message period
+    irRmtSendLg(kLgAcSwingVToggle);              // 0x8810001
+    Serial.printf("AC -> swing toggle -> %s raw=0x%07lX (LG framing)\n",
+                  g_acSwing ? "ON" : "OFF", (unsigned long)kLgAcSwingVToggle);
+  }
+
+  g_acSentOnce  = true;
+  g_acSentMode  = g_acMode;
+  g_acSentSwing = g_acSwing;
+  g_acSentTemp  = wantTemp;
+  g_acSentFan   = g_acFan;
 }
 
 static void onAcModeWrite(uint16_t state) {
