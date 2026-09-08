@@ -60,6 +60,16 @@ const COLOUR_TICKS = 2;      // 2 min — nothing is reported, so colour state i
 // endpoints on something that actually quacks like a Device, and fall back to
 // advertising the full set when we cannot tell.
 const asDevice = (device) => (device && typeof device.getEndpoint === 'function' ? device : null);
+/* ONLY read the colour attributes the firmware actually maintains.
+ * The device keeps currentX/currentY (and colorTemperature on a CCT endpoint),
+ * but NEVER updates currentHue/currentSaturation — they sit at 0/0 forever.
+ * Reading them made every published colour carry hue:0, saturation:0, which the
+ * UI faithfully applied: the saturation bar snapped to zero, the hue to red, and
+ * because the UI then re-sent that, the colour walked to the white point. Read
+ * the wrong attributes and you don't get stale data, you get a feedback loop. */
+const colourAttrs = (device, id) =>
+  lightKind(device, id) === 'cct' ? ['colorMode', 'colorTemperature'] : ['colorMode', 'currentX', 'currentY'];
+
 const hasEp = (device, id) => {
   const d = asDevice(device);
   return d ? !!d.getEndpoint(id) : true;   // unknown -> assume present
@@ -386,10 +396,9 @@ module.exports = [
         // Cache colorCapabilities so lightKind() can tell CCT from RGB. Harmless
         // on a plain dimmer endpoint (no such cluster -> the read just fails).
         await readSafe(id, 'lightingColorCtrl', ['colorCapabilities']);
-        // ...and the actual colour state, so the UI picker starts populated. The
-        // device never reports, so without this there is no colour state at all.
-        await readSafe(id, 'lightingColorCtrl',
-                       ['colorMode', 'currentX', 'currentY', 'currentHue', 'currentSaturation', 'colorTemperature']);
+        // ...and the colour state the device really maintains, so the UI picker
+        // starts populated. Nothing is reported, so without this there is none.
+        await readSafe(id, 'lightingColorCtrl', colourAttrs(device, id));
       }
       await readSafe(EP.cfg, 'genMultistateOutput', ['presentValue']);
       await readSafe(EP.mask, 'genAnalogOutput', ['presentValue']);
@@ -486,8 +495,7 @@ module.exports = [
           for (const [, id] of LIGHT_EPS) {
             const ep = device.getEndpoint(id);
             if (!ep || !(ep.supportsInputCluster && ep.supportsInputCluster('lightingColorCtrl'))) continue;
-            await read(id, 'lightingColorCtrl',
-                       ['colorMode', 'currentX', 'currentY', 'currentHue', 'currentSaturation', 'colorTemperature']);
+            await read(id, 'lightingColorCtrl', colourAttrs(device, id));
           }
         }
       }, POLL_TICK_MS);
