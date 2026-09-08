@@ -134,7 +134,7 @@ const fzAnalogOutput = {
     const v = msg.data.presentValue;
     if (v === undefined) return;
     if (msg.endpoint.ID === EP.mask) return {channels: Math.round(v)};
-    if (msg.endpoint.ID === EP.acTemp) return {occupied_cooling_setpoint: Math.round(v * 10) / 10};
+    if (msg.endpoint.ID === EP.acTemp) return {occupied_heating_setpoint: Math.round(v * 10) / 10};
     return;
   },
 };
@@ -221,7 +221,7 @@ const writeEp = async (meta, epId, cluster, payload, what) => {
 };
 
 const tzAc = {
-  key: ['system_mode', 'occupied_cooling_setpoint', 'fan_mode', 'swing'],
+  key: ['system_mode', 'occupied_heating_setpoint', 'fan_mode', 'swing'],
   /* Z2M calls a toZigbee converter ONCE per payload, not once per key, and skips
    * it for the remaining keys it owns — the same contract tz.light_onoff_brightness
    * relies on to handle state+brightness together. HA sets mode, temperature and
@@ -232,11 +232,11 @@ const tzAc = {
     const msg = (meta && meta.message) || {[key]: value};
     const state = {};
 
-    if (msg.occupied_cooling_setpoint !== undefined) {
-      const t = Number(msg.occupied_cooling_setpoint);
+    if (msg.occupied_heating_setpoint !== undefined) {
+      const t = Number(msg.occupied_heating_setpoint);
       if (!(t >= 16 && t <= 30)) throw new Error('setpoint must be 16..30 C');
       await writeEp(meta, EP.acTemp, 'genAnalogOutput', {presentValue: t}, 'AC setpoint');
-      state.occupied_cooling_setpoint = t;
+      state.occupied_heating_setpoint = t;
     }
 
     if (msg.fan_mode !== undefined) {
@@ -265,7 +265,7 @@ const tzAc = {
   convertGet: async (entity, key, meta) => {
     const map = {
       system_mode: [EP.acMode, 'genMultistateOutput', ['presentValue']],
-      occupied_cooling_setpoint: [EP.acTemp, 'genAnalogOutput', ['presentValue']],
+      occupied_heating_setpoint: [EP.acTemp, 'genAnalogOutput', ['presentValue']],
       fan_mode: [EP.acFan, 'hvacFanCtrl', ['fanMode']],
       swing: [EP.acSwing, 'genBinaryOutput', ['presentValue']],
     };
@@ -342,7 +342,13 @@ module.exports = [
       if (hasEp(device, EP.acMode)) {
         list.push(exposes.climate()
           .withSystemMode(AC_MODES)
-          .withSetpoint('occupied_cooling_setpoint', 16, 30, 1)
+          /* MUST be occupied_heating_setpoint (or current_heating_setpoint): Z2M's
+           * HA-discovery extension asserts on those property names specifically,
+           * and occupied_cooling_setpoint made the WHOLE HomeAssistant extension
+           * fail to start — house-wide, not just this device. The name is a Z2M
+           * convention for a single-setpoint climate; HA maps it to `temperature`
+           * regardless of whether the unit is heating or cooling. */
+          .withSetpoint('occupied_heating_setpoint', 16, 30, 1)
           .withLocalTemperature()
           .withFanMode(FAN_MODES_EXPOSED)
           .withDescription('LG split driven over IR. One-way: the state shown is what was last ' +
