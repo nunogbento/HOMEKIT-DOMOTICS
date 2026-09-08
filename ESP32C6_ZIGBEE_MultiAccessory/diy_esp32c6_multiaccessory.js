@@ -357,7 +357,8 @@ module.exports = [
           'wired on CH1+CH3, is 5; all four is 15. A CCT pair needs both of its channels set. ' +
           'Stored in NVS; the board REBOOTS to apply and must then be re-interviewed.'));
       list.push(exposes.numeric('brownout_count', ea.STATE)
-        .withDescription('Brownout/unexpected resets since flash'));
+        .withDescription('Brownout/unexpected resets since flash')
+        .withCategory('diagnostic'));
       list.push(e.device_temperature().withDescription('MCU die temperature (diagnostic, not ambient)'));
       // AC: one climate expose assembled from EP30..EP33, so HA gets a real
       // climate entity (and HomeKit a thermostat) despite there being no

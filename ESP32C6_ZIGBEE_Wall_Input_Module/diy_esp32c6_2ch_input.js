@@ -113,7 +113,8 @@ module.exports = [
           'toggle_directional=on/off; toggle_scenes=single/double from flip count'),
       exposes.enum('mode_2', ea.ALL, MODES)
         .withDescription('Input 2 behaviour (see input 1)'),
-      exposes.numeric('brownout_count', ea.STATE).withDescription('Brownout/unexpected resets since flash'),
+      exposes.numeric('brownout_count', ea.STATE).withDescription('Brownout/unexpected resets since flash')
+        .withCategory('diagnostic'),
       e.device_temperature().withDescription('MCU die temperature (diagnostic, not ambient)'),
     ],
     configure: async (device, coordinatorEndpoint) => {
