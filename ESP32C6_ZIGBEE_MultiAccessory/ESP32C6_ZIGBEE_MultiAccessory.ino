@@ -104,13 +104,24 @@ static const uint8_t CH_PIN[4] = { 6, 5, 4, 2 };  // CH1..CH4  (IO6, IO5, IO4, I
 #define IR_LED_PIN   21                            // phase 3
 #define SDA_PIN      10
 #define SCL_PIN      3
+/* Status LED: IO8, ACTIVE LOW — owner-confirmed on this board. IO8 is a C6
+ * strapping pin, but it only strapped when pulled HIGH, so driving it low for
+ * the LED is fine. */
+#define HAS_STATUS_LED
 #define STATUS_LED   8
 #define CONTROL_PIN  9                             // also IO9/BOOT — factory reset hold
-#define STATUS_LED_ACTIVE_LOW 1                    // TODO bench-confirm polarity
+#define STATUS_LED_ACTIVE_LOW 1
 
-/* PWM: 2 kHz is well above visible flicker and gentle on an undriven MOSFET
- * gate; 12-bit gives smooth low-end dimming. */
-#define LEDC_FREQ_HZ 2000
+/* PWM frequency. 300 Hz, matching what the original firmware used
+ * (analogWriteFreq(300)) — that value was not arbitrary.
+ *
+ * At 2 kHz the period is 500 us, so a few percent duty is only tens of us, and
+ * these MOSFETs are driven straight from a GPIO with no gate driver: they never
+ * fully switch in that time and the strip stays DARK below roughly 25%
+ * (measured: nothing lit under level ~85/254). At 300 Hz the period is 3.3 ms,
+ * so the same duty is milliseconds and the gate has all the time it needs.
+ * Still far above visible flicker. */
+#define LEDC_FREQ_HZ 300
 #define LEDC_BITS    12
 #define DUTY_MAX     ((1 << LEDC_BITS) - 1)
 
@@ -248,12 +259,16 @@ static uint8_t g_rgbR = 0xFF, g_rgbG = 0xFF, g_rgbB = 0xFF, g_rgbW = 0xFF;
 /* Perceptual curve: Zigbee CurrentLevel is linear, human brightness is not.
  * gamma 2.2 keeps the bottom of the range usable on LED strips (a linear duty
  * makes 1..40 look almost identical). */
+/* ...and a duty FLOOR. Gamma crushes the low end towards zero, which on this
+ * driver means "off" rather than "very dim", so the bottom of the range was
+ * unusable. Map the curve onto [DUTY_MIN, DUTY_MAX] instead of [0, DUTY_MAX] so
+ * level 1 still produces a pulse the hardware can actually reproduce. */
+#define DUTY_MIN 60   /* ~1.5% -> ~50 us at 300 Hz, comfortably above threshold */
 static uint32_t levelToDuty(uint8_t level) {
   if (level == 0) return 0;
-  float norm = (float)level / 254.0f;
-  float duty = powf(norm, 2.2f) * (float)DUTY_MAX;
-  uint32_t d = (uint32_t)(duty + 0.5f);
-  return d ? d : 1;  // never round a non-zero level down to fully off
+  const float norm = (float)level / 254.0f;
+  const float curved = powf(norm, 2.2f);
+  return (uint32_t)(DUTY_MIN + curved * (float)(DUTY_MAX - DUTY_MIN) + 0.5f);
 }
 
 /* Each channel ramps linearly from where it was to where it is going, so a
