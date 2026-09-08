@@ -376,6 +376,28 @@ static void onCct0(bool s, uint8_t l, uint16_t t) { setCct(0, s, l, t); }
 static void onCct1(bool s, uint8_t l, uint16_t t) { setCct(1, s, l, t); }
 static void onRgbCb(bool s, uint8_t r, uint8_t g, uint8_t b, uint8_t l) { setRgb(s, r, g, b, l); }
 
+/* In HUE/SATURATION colour mode the endpoint class calls lightChangedHsv(), NOT
+ * the RGB callback — registering only the RGB one means commands arrive and
+ * nothing reaches the pins. Convert here and reuse the RGB path so the white
+ * extraction and level scaling stay in one place. Zigbee hue/sat are 0..254. */
+static void onHsvCb(bool state, uint8_t hue, uint8_t sat, uint8_t val) {
+  const float H = (float)hue * 360.0f / 254.0f;
+  const float S = (float)sat / 254.0f;
+  const float C = S;                       // value is carried by `val` (the level)
+  const float X = C * (1.0f - fabsf(fmodf(H / 60.0f, 2.0f) - 1.0f));
+  const float m = 1.0f - C;
+  float r1, g1, b1;
+  if      (H <  60) { r1 = C; g1 = X; b1 = 0; }
+  else if (H < 120) { r1 = X; g1 = C; b1 = 0; }
+  else if (H < 180) { r1 = 0; g1 = C; b1 = X; }
+  else if (H < 240) { r1 = 0; g1 = X; b1 = C; }
+  else if (H < 300) { r1 = X; g1 = 0; b1 = C; }
+  else              { r1 = C; g1 = 0; b1 = X; }
+  setRgb(state, (uint8_t)((r1 + m) * 255.0f + 0.5f),
+                (uint8_t)((g1 + m) * 255.0f + 0.5f),
+                (uint8_t)((b1 + m) * 255.0f + 0.5f), val);
+}
+
 /* ============================================================
  *  PROFILE SELECTOR (EP14)
  * ============================================================ */
@@ -731,7 +753,10 @@ void setup() {
   for (uint8_t i = 0; i < 4; i++) if (zbDim[i]) zbDim[i]->onLightChange(dimCb[i]);
   if (zbCct[0]) zbCct[0]->onLightChangeTemp(onCct0);
   if (zbCct[1]) zbCct[1]->onLightChangeTemp(onCct1);
-  if (zbRgb)    zbRgb->onLightChangeRgb(onRgbCb);
+  if (zbRgb) {
+    zbRgb->onLightChangeRgb(onRgbCb);
+    zbRgb->onLightChangeHsv(onHsvCb);   // the one that actually fires in hs mode
+  }
 
   // 5. Profile selector
   zbCfg.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
