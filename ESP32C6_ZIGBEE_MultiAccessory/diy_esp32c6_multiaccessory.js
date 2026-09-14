@@ -157,7 +157,7 @@ const fzBinaryOutput = {
     const v = msg.data.presentValue;
     if (v === undefined) return;
     if (msg.endpoint.ID === EP.acCfg) return {ac_enabled: v ? 'ON' : 'OFF'};
-    if (msg.endpoint.ID === EP.acSwing) return {swing: v ? 'ON' : 'OFF'};
+    if (msg.endpoint.ID === EP.acSwing) return {swing_mode: v ? 'on' : 'off'};
     return;
   },
 };
@@ -231,7 +231,7 @@ const writeEp = async (meta, epId, cluster, payload, what) => {
 };
 
 const tzAc = {
-  key: ['system_mode', 'occupied_heating_setpoint', 'fan_mode', 'swing'],
+  key: ['system_mode', 'occupied_heating_setpoint', 'fan_mode', 'swing_mode'],
   /* Z2M calls a toZigbee converter ONCE per payload, not once per key, and skips
    * it for the remaining keys it owns — the same contract tz.light_onoff_brightness
    * relies on to handle state+brightness together. HA sets mode, temperature and
@@ -257,10 +257,13 @@ const tzAc = {
       state.fan_mode = wanted;
     }
 
-    if (msg.swing !== undefined) {
-      const on = String(msg.swing).toUpperCase() === 'ON' || msg.swing === true;
+    if (msg.swing_mode !== undefined) {
+      /* The split's swing is a TOGGLE on the IR side, so the board sends one only
+       * when the requested state differs from what it last believed. That makes
+       * our state optimistic and able to drift if the physical remote is used. */
+      const on = String(msg.swing_mode).toLowerCase() === 'on' || msg.swing_mode === true;
       await writeEp(meta, EP.acSwing, 'genBinaryOutput', {presentValue: on ? 1 : 0}, 'AC swing');
-      state.swing = on ? 'ON' : 'OFF';
+      state.swing_mode = on ? 'on' : 'off';
     }
 
     if (msg.system_mode !== undefined) {
@@ -277,7 +280,7 @@ const tzAc = {
       system_mode: [EP.acMode, 'genMultistateOutput', ['presentValue']],
       occupied_heating_setpoint: [EP.acTemp, 'genAnalogOutput', ['presentValue']],
       fan_mode: [EP.acFan, 'hvacFanCtrl', ['fanMode']],
-      swing: [EP.acSwing, 'genBinaryOutput', ['presentValue']],
+      swing_mode: [EP.acSwing, 'genBinaryOutput', ['presentValue']],
     };
     const m = map[key];
     if (!m) return;
@@ -377,9 +380,17 @@ module.exports = [
           .withSetpoint('occupied_heating_setpoint', 16, 30, 1)
           .withLocalTemperature()
           .withFanMode(FAN_MODES_EXPOSED)
+          /* Swing belongs INSIDE the climate composite, not as a top-level binary:
+           * a top-level expose becomes its own HA switch entity, while a climate
+           * feature lands in the climate card AND survives the hop to HomeKit —
+           * HA's bridge adds the native SwingMode characteristic to the
+           * HeaterCooler service. That hop has a hard requirement: the values must
+           * intersect {on, both, vertical, horizontal} (homekit's
+           * PRE_DEFINED_SWING_MODES), everything else being treated as off. So the
+           * list is exactly ['off','on'] — 'toggle' would be silently dropped. */
+          .withSwingMode(['off', 'on'])
           .withDescription('LG split driven over IR. One-way: the state shown is what was last ' +
             'commanded, not read back from the unit. local_temperature comes from the AM2320.'));
-        list.push(exposes.binary('swing', ea.ALL, 'ON', 'OFF').withDescription('Vertical swing'));
       }
       list.push(exposes.binary('ac_enabled', ea.ALL, 'ON', 'OFF')
         .withDescription('Is an LG split wired to this board\'s IR LED? IR cannot be probed, so this ' +
