@@ -1,12 +1,12 @@
 [
   {
-    "fileName": "ESP32C6-2CH-INPUT_v0x01000007.ota",
-    "fileVersion": 16777223,
-    "fileSize": 740206,
-    "url": "ota_override/ESP32C6-2CH-INPUT_v0x01000007.ota",
+    "fileName": "ESP32C6-2CH-INPUT_v0x01000008.ota",
+    "fileVersion": 16777224,
+    "fileSize": 744398,
+    "url": "ota_override/ESP32C6-2CH-INPUT_v0x01000008.ota",
     "imageType": 4113,
     "manufacturerCode": 4097,
-    "sha512": "80c10acd9f539bd5bfdb64753a40ed2afaca5a82f32c66e2bce270f64b25a523fb234a2db5dc7f6451913dc6092247c4445a418ba374ed2302d50e02d337d433",
+    "sha512": "128e087cc8f2d70f3b283eebcf20e3004d057fc635935574d50b7ac87e6058abc8346cd817a65a22845aecc0891aeb991cd0765408e1d2ca4fe3cdd39eb1dba6",
     "otaHeaderString": "ESP32C6-2CH-INPUT",
     "modelId": "ESP32C6-2CH-INPUT"
   }

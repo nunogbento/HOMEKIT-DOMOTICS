@@ -111,8 +111,8 @@
 /* --- OTA (Zigbee firmware update over the mesh) --- */
 // Version is 0xMMmmpprr — this build is v1.0.0.7 (v8: device_temperature via POLL,
 // no stack reporting — the reporting send path faults this zboss build).
-#define OTA_FW_RUNNING     0x01000007
-#define OTA_FW_DOWNLOADED  0x01000008
+#define OTA_FW_RUNNING     0x01000008
+#define OTA_FW_DOWNLOADED  0x01000009
 #define OTA_HW_VERSION     0x0101
 #define OTA_MANUFACTURER   0x1001
 #define OTA_IMAGE_TYPE     0x1011
