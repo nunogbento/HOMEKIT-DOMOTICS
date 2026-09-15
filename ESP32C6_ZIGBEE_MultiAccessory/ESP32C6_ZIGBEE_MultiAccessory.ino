@@ -52,9 +52,8 @@
  * ENDPOINT MAP
  *   EP10..EP13  Dimmable Light, one per PWM channel (OTA client sits on EP10)
  *   EP14        Multistate Output -> output profile selector
- *   EP15        Analog Input      -> brownout counter
- *   EP19        Analog In + 0xFC00 -> all-cause reset count + crash summary string
- *   EP21        Binary Output     -> crash test (config; deliberately panics)
+ *   EP15        Analog In + Out   -> brownout count; the two descriptions carry the
+ *                                    reset reason / count and the crash post-mortem
  *   EP16        Temperature       -> C6 die temperature (diagnostic)
  *   EP18        Binary Output     -> AC ENABLED (config; IR can't be probed)
  *   EP20        Temperature + Humidity -> AM2320, ONLY IF DETECTED
@@ -285,56 +284,36 @@ ZigbeeColorDimmableLight *zbCct[2] = { nullptr, nullptr };                    //
 ZigbeeColorDimmableLight *zbRgb    = nullptr;                                 // RGB(W)
 ZigbeeEP                 *zbEp10   = nullptr;   // whichever endpoint owns EP10 (carries OTA)
 
+/* Post-mortem transport: the `description` attribute (0x001C) of the STANDARD
+ * genAnalogInput / genAnalogOutput clusters on EP15, NOT a custom cluster.
+ *
+ * A custom 0xFC00 cluster was tried first and the board simply never answered
+ * reads on it — a known, open esp-zigbee-sdk defect (issues #278, #406, #434,
+ * #811): a custom cluster descriptor defaults to manufacturer code 0x0000 while
+ * its attributes default to 0xFFFF, so a plain read never matches. The
+ * descriptor was advertised correctly and the board stayed up; the read just
+ * timed out every time. Standard clusters are served properly, so the summary is
+ * split across two 32-char description fields on an endpoint that already exists.
+ *
+ * Both are written ONCE, before Zigbee.begin(), with their final contents. That
+ * matters: the first attempt registered a zero-length string and then wrote ~110
+ * chars into it at runtime, which corrupted ZBOSS's buffer pool and asserted in
+ * common/zb_bufpool_mult.c during every interview. The length must never grow
+ * after registration, and never changing it at all is the safest version of that.
+ */
+#define DIAG_FIELD_MAX 32     // ZB_MAX_NAME_LENGTH in the Arduino wrapper
+/* Writing this to EP15's analog output panics the board on purpose, so the
+ * post-mortem path can be proven on a unit with no serial attached. It reuses an
+ * output that exists only to carry a description, so it costs no endpoint — and
+ * endpoints are not free: adding two of them made ZBOSS assert during interview. */
+#define DIAG_CRASH_MAGIC 13579.0f
+
 ZigbeeMultistate  zbCfg(14);    // profile selector
-ZigbeeAnalog      zbDiag(15);   // brownout counter
+ZigbeeAnalog      zbDiag(15);   // brownout counter + crash post-mortem (description fields)
 ZigbeeTempSensor  zbDie(16);    // die temperature
 ZigbeeAnalog      zbMask(17);   // channel mask (which channels are populated)
 ZigbeeBinary      zbAcCfg(18);  // config: AC enabled
 
-/* EP19 — post-mortem diagnostics. These boards end up behind panels and under
- * beds with no serial, so the only way to learn WHY one restarted is to carry it
- * out over the mesh. The Arduino wrapper has no string-attribute class, so this
- * subclass reaches the protected cluster list and adds a custom cluster holding
- * one CharacterString. `description` on genAnalogInput was the cheaper option but
- * the wrapper caps it at 32 chars, and a crash line needs ~110. */
-#define DIAG_CLUSTER_ID   0xFC00
-#define DIAG_ATTR_SUMMARY 0x0000
-#define DIAG_STR_MAX      200          // usable chars; ZCL string is [len][data]
-
-class ZigbeeCrashDiag : public ZigbeeAnalog {
- public:
-  explicit ZigbeeCrashDiag(uint8_t ep) : ZigbeeAnalog(ep) {}
-
-  bool addSummaryCluster() {
-    _zbuf[0] = 0;                                   // ZCL string: length byte first
-    esp_zb_attribute_list_t *cl = esp_zb_zcl_attr_list_create(DIAG_CLUSTER_ID);
-    if (!cl) return false;
-    if (esp_zb_custom_cluster_add_custom_attr(cl, DIAG_ATTR_SUMMARY,
-          ESP_ZB_ZCL_ATTR_TYPE_CHAR_STRING,
-          ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, _zbuf) != ESP_OK) return false;
-    return esp_zb_cluster_list_add_custom_cluster(_cluster_list, cl,
-             ESP_ZB_ZCL_CLUSTER_SERVER_ROLE) == ESP_OK;
-  }
-
-  /* Safe to call after Zigbee.begin(): updates the live attribute value. */
-  void setSummary(const char *txt) {
-    size_t n = strlen(txt);
-    if (n > DIAG_STR_MAX) n = DIAG_STR_MAX;
-    _zbuf[0] = (char)n;
-    memcpy(_zbuf + 1, txt, n);
-    _zbuf[n + 1] = 0;
-    esp_zb_lock_acquire(portMAX_DELAY);
-    esp_zb_zcl_set_attribute_val(_endpoint, DIAG_CLUSTER_ID,
-      ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, DIAG_ATTR_SUMMARY, _zbuf, false);
-    esp_zb_lock_release();
-  }
-
- private:
-  char _zbuf[DIAG_STR_MAX + 2];
-};
-
-ZigbeeCrashDiag   zbCrash(19);  // reset count (analog in) + crash summary (0xFC00)
-ZigbeeBinary      zbCrashTest(21);  // config: deliberately panic, to prove the chain
 ZigbeeMultistate  zbAcMode(30); // AC system mode      (created only when enabled)
 ZigbeeAnalog      zbAcTemp(31); // AC setpoint
 ZigbeeFanControl  zbAcFan(32);  // AC fan mode
@@ -848,7 +827,8 @@ static bool am2320Read(float &tempC, float &rh) {
  *  The dump is deliberately NOT erased: it stays readable across later reboots
  *  until a new crash overwrites it.
  * ============================================================ */
-static char     g_diagSummary[DIAG_STR_MAX + 1] = "";
+static char     g_diagA[DIAG_FIELD_MAX + 1] = "";   // rst / count / task
+static char     g_diagB[DIAG_FIELD_MAX + 1] = "";   // pc / mcause / elf hash
 static uint32_t g_resetCount = 0;
 
 static const char *resetReasonName(esp_reset_reason_t r) {
@@ -873,38 +853,42 @@ static void buildDiagSummary(esp_reset_reason_t rr) {
   prefs.putUInt("rstcnt", g_resetCount);
   prefs.end();
 
-  int n = snprintf(g_diagSummary, sizeof(g_diagSummary), "rst=%s n=%lu",
-                   resetReasonName(rr), (unsigned long)g_resetCount);
+  snprintf(g_diagA, sizeof(g_diagA), "rst=%s n=%lu",
+           resetReasonName(rr), (unsigned long)g_resetCount);
+  snprintf(g_diagB, sizeof(g_diagB), "nodump");
 
   if (esp_core_dump_image_check() == ESP_OK) {
     /* ~1.1 kB (it embeds a 1 kB stack dump) — heap, not stack. */
     esp_core_dump_summary_t *cd = (esp_core_dump_summary_t *)malloc(sizeof(*cd));
     if (cd) {
       if (esp_core_dump_get_summary(cd) == ESP_OK) {
-        snprintf(g_diagSummary + n, sizeof(g_diagSummary) - n,
-                 " task=%.16s pc=0x%08lX ra=0x%08lX mcause=%lu mtval=0x%08lX sha=%02x%02x%02x%02x",
-                 cd->exc_task, (unsigned long)cd->exc_pc,
-                 (unsigned long)cd->ex_info.ra, (unsigned long)cd->ex_info.mcause,
-                 (unsigned long)cd->ex_info.mtval,
-                 cd->app_elf_sha256[0], cd->app_elf_sha256[1],
-                 cd->app_elf_sha256[2], cd->app_elf_sha256[3]);
+        /* Field A also carries the faulting task; field B the addresses. 32 chars
+         * each, so ra and mtval are dropped — pc plus mcause locates the fault and
+         * the ELF hash keeps symbolisation honest, which is the 90 % that matters. */
+        snprintf(g_diagA, sizeof(g_diagA), "rst=%s n=%lu t=%.10s",
+                 resetReasonName(rr), (unsigned long)g_resetCount, cd->exc_task);
+        /* app_elf_sha256 is an ASCII STRING ("SHA256 sum as a string"), not raw
+         * bytes — %02x on it gives the hex of the characters, which looks
+         * plausible and is wrong. */
+        snprintf(g_diagB, sizeof(g_diagB), "pc=%08lX mc=%lu s=%.8s",
+                 (unsigned long)cd->exc_pc, (unsigned long)cd->ex_info.mcause,
+                 (const char *)cd->app_elf_sha256);
       } else {
-        snprintf(g_diagSummary + n, sizeof(g_diagSummary) - n, " dump=unreadable");
+        snprintf(g_diagB, sizeof(g_diagB), "dump=unreadable");
       }
       free(cd);
     } else {
-      snprintf(g_diagSummary + n, sizeof(g_diagSummary) - n, " dump=nomem");
+      snprintf(g_diagB, sizeof(g_diagB), "dump=nomem");
     }
-  } else {
-    snprintf(g_diagSummary + n, sizeof(g_diagSummary) - n, " nodump");
   }
-  Serial.printf("DIAG %s\n", g_diagSummary);
+  /* Serial still gets the full picture, including ra/mtval, when it is attached. */
+  Serial.printf("DIAG %s | %s\n", g_diagA, g_diagB);
 }
 
-/* Config switch that deliberately panics, so the whole readout chain can be
- * proven on a board with no serial attached. Writing ON is the trigger. */
-static void onCrashTestWrite(bool on) {
-  if (!on) return;
+/* Deliberate panic, for proving the post-mortem path end to end. Guarded by a
+ * magic value so a stray write cannot reboot an installed board. */
+static void onDiagCrashWrite(float value) {
+  if (value != DIAG_CRASH_MAGIC) return;
   Serial.println("DIAG: crash test requested — panicking in 200 ms");
   delay(200);
   volatile uint32_t *nowhere = (uint32_t *)0x00000000;
@@ -1068,19 +1052,12 @@ void setup() {
   //    here; the converter polls them (see the no-reporting note in the header).
   zbDiag.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
   zbDiag.addAnalogInput();
-  zbDiag.setAnalogInputDescription("Brownout count");
-
-  // EP19 — all-cause reset counter + the crash summary string (custom 0xFC00).
-  zbCrash.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
-  zbCrash.addAnalogInput();
-  zbCrash.setAnalogInputDescription("Reset count (all causes)");
-  if (!zbCrash.addSummaryCluster()) Serial.println("DIAG: custom cluster add FAILED");
-
-  // EP21 — deliberate panic, so the readout chain can be proven without serial.
-  zbCrashTest.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
-  zbCrashTest.addBinaryOutput();
-  zbCrashTest.setBinaryOutputDescription("Crash test (panics the board)");
-  zbCrashTest.onBinaryOutputChange(onCrashTestWrite);
+  /* The two description fields ARE the post-mortem transport — see the block
+   * comment above. Written once here, never touched again. */
+  zbDiag.setAnalogInputDescription(g_diagA);
+  zbDiag.addAnalogOutput();                      // carries g_diagB, and the crash trigger
+  zbDiag.setAnalogOutputDescription(g_diagB);
+  zbDiag.onAnalogOutputChange(onDiagCrashWrite);
   zbDie.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
   zbDie.setMinMaxValue(-40, 125);
   zbMask.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
@@ -1147,8 +1124,6 @@ void setup() {
   if (zbRgb) Zigbee.addEndpoint(zbRgb);
   Zigbee.addEndpoint(&zbCfg);
   Zigbee.addEndpoint(&zbDiag);
-  Zigbee.addEndpoint(&zbCrash);
-  Zigbee.addEndpoint(&zbCrashTest);
   Zigbee.addEndpoint(&zbDie);
   Zigbee.addEndpoint(&zbMask);
   Zigbee.addEndpoint(&zbAcCfg);
@@ -1174,8 +1149,6 @@ void setup() {
   // 9. Publish the current profile and the boot-time diagnostics.
   zbCfg.setMultistateOutput(g_profileStored);
   zbDiag.setAnalogInput((float)g_brownoutCount);
-  zbCrash.setAnalogInput((float)g_resetCount);
-  zbCrash.setSummary(g_diagSummary);
   g_maskEcho = true;
   zbMask.setAnalogOutput((float)g_chMask);
   g_acCfgEcho = true;
