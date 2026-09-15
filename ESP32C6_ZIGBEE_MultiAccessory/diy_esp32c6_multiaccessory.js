@@ -29,7 +29,7 @@ const ea = exposes.access;
 
 const EP = {
   l1: 10, l2: 11, l3: 12, l4: 13,
-  cfg: 14, diag: 15, die: 16, mask: 17, acCfg: 18, room: 20,
+  cfg: 14, diag: 15, die: 16, mask: 17, acCfg: 18, crash: 19, room: 20, crashTest: 21,
   acMode: 30, acTemp: 31, acFan: 32, acSwing: 33,
 };
 const LIGHT_EPS = [['l1', 10], ['l2', 11], ['l3', 12], ['l4', 13]];
@@ -48,7 +48,18 @@ const FAN_MODES_EXPOSED = ['low', 'medium', 'high', 'auto'];
 const POLL_TICK_MS = 60 * 1000;
 const DIE_TEMP_TICKS = 5;    // 5 min
 const ROOM_TICKS = 3;        // 3 min (firmware refreshes the AM2320 every 2 min)
-const DIAG_TICKS = 30;       // 30 min — only changes on a brownout
+const DIAG_TICKS = 30;       // 30 min — only changes on a brownout or a reset
+
+/* Custom cluster carrying the post-mortem string. The Arduino Zigbee wrapper has
+ * no string-attribute class and `description` on genAnalogInput is capped at 32
+ * chars by the wrapper, so the firmware adds this cluster by hand. */
+const DIAG_CLUSTER = 'diyDiag';
+const DIAG_CLUSTER_DEF = {
+  ID: 0xFC00,
+  attributes: {summary: {ID: 0x0000, type: 0x42 /* CHAR_STR */}},
+  commands: {},
+  commandsResponse: {},
+};
 const COLOUR_TICKS = 2;      // 2 min — nothing is reported, so colour state is polled
 
 // exposes() is called from Z2M's resolveDevicesDefinitions() as well as for real
@@ -158,6 +169,7 @@ const fzBinaryOutput = {
     if (v === undefined) return;
     if (msg.endpoint.ID === EP.acCfg) return {ac_enabled: v ? 'ON' : 'OFF'};
     if (msg.endpoint.ID === EP.acSwing) return {swing_mode: v ? 'on' : 'off'};
+    if (msg.endpoint.ID === EP.crashTest) return {crash_test: v ? 'ON' : 'OFF'};
     return;
   },
 };
@@ -178,7 +190,26 @@ const fzBrownout = {
   convert: (model, msg) => {
     const v = msg.data.presentValue;
     if (v === undefined) return;
-    return {brownout_count: Math.round(v)};
+    // EP19 is also a genAnalogInput, so this MUST be endpoint-aware or the
+    // reset counter would overwrite the brownout counter.
+    if (msg.endpoint.ID === EP.crash) return {reset_count: Math.round(v)};
+    if (msg.endpoint.ID === EP.diag) return {brownout_count: Math.round(v)};
+    return;
+  },
+};
+
+/* The crash summary. Shipped as one string so it costs a single read:
+ *   rst=PANIC n=7 task=loopTask pc=0x420... ra=0x420... mcause=7 mtval=0x0 sha=1a2b3c4d
+ * pc/ra are symbolised on the host with riscv32-esp-elf-addr2line; sha is the
+ * first 4 bytes of the crashing build's ELF hash, so an old dump can never be
+ * read against new firmware by mistake. */
+const fzCrashSummary = {
+  cluster: DIAG_CLUSTER,
+  type: ['attributeReport', 'readResponse'],
+  convert: (model, msg) => {
+    const v = msg.data.summary;
+    if (v === undefined || v === null) return;
+    return {crash_summary: String(v)};
   },
 };
 
@@ -289,6 +320,21 @@ const tzAc = {
   },
 };
 
+/* Deliberately panics the board, to prove the post-mortem chain works on a unit
+ * with no serial attached. The board reboots, so the write will look like it
+ * timed out — that is the expected outcome, not a failure. */
+const tzCrashTest = {
+  key: ['crash_test'],
+  convertSet: async (entity, key, value, meta) => {
+    const on = String(value).toUpperCase() === 'ON' || value === true;
+    if (!on) return {state: {crash_test: 'OFF'}};
+    try {
+      await writeEp(meta, EP.crashTest, 'genBinaryOutput', {presentValue: 1}, 'crash test');
+    } catch (err) { /* the board panics mid-write; a timeout here is expected */ }
+    return {state: {crash_test: 'OFF'}};
+  },
+};
+
 const tzAcEnabled = {
   key: ['ac_enabled'],
   convertSet: async (entity, key, value, meta) => {
@@ -311,8 +357,9 @@ module.exports = [
     vendor: 'DIY',
     description: 'ESP32-C6 MultiAccessory — 4 PWM channels, IR AC and AM2320, Zigbee router',
     fromZigbee: [fz.on_off, fz.brightness, fz.color_colortemp, fzMultistateOutput, fzAnalogOutput,
+      fzCrashSummary,
                  fzBinaryOutput, fzFanMode, fzTemperature, fzHumidity, fzBrownout],
-    toZigbee: [tz.light_onoff_brightness, tz.light_color_colortemp, tz.light_colortemp_startup,
+    toZigbee: [tzCrashTest, tz.light_onoff_brightness, tz.light_color_colortemp, tz.light_colortemp_startup,
                tzProfile, tzMask, tzAc, tzAcEnabled],
     ota: true,
     /* supportsHueAndSaturation defaults to FALSE, and tz.light_color checks THIS,
@@ -364,6 +411,18 @@ module.exports = [
       list.push(exposes.numeric('brownout_count', ea.STATE)
         .withDescription('Brownout/unexpected resets since flash')
         .withCategory('diagnostic'));
+      list.push(exposes.numeric('reset_count', ea.STATE)
+        .withDescription('Restarts since flash, ALL causes — brownouts, panics, watchdogs and ' +
+          'deliberate reboots alike. brownout_count only counts what the BOD classified.')
+        .withCategory('diagnostic'));
+      list.push(exposes.text('crash_summary', ea.STATE)
+        .withDescription('Last reset reason, plus the core-dump post-mortem if the board panicked: ' +
+          'faulting task, pc, ra, mcause, mtval and the crashing build\'s ELF hash. Symbolise pc/ra ' +
+          'with tools/esp32/crashdecode.sh.')
+        .withCategory('diagnostic'));
+      list.push(exposes.binary('crash_test', ea.SET, 'ON', 'OFF')
+        .withDescription('Deliberately panic the board to prove the post-mortem path. It REBOOTS.')
+        .withCategory('config'));
       list.push(e.device_temperature().withDescription('MCU die temperature (diagnostic, not ambient)'));
       // AC: one climate expose assembled from EP30..EP33, so HA gets a real
       // climate entity (and HomeKit a thermostat) despite there being no
@@ -428,6 +487,8 @@ module.exports = [
       await readSafe(EP.acFan, 'hvacFanCtrl', ['fanMode']);
       await readSafe(EP.acSwing, 'genBinaryOutput', ['presentValue']);
       await readSafe(EP.diag, 'genAnalogInput', ['presentValue']);
+      await readSafe(EP.crash, 'genAnalogInput', ['presentValue']);
+      await readSafe(EP.crash, DIAG_CLUSTER, ['summary']);
       await readSafe(EP.die, 'msTemperatureMeasurement', ['measuredValue']);
       await readSafe(EP.room, 'msTemperatureMeasurement', ['measuredValue']);
       await readSafe(EP.room, 'msRelativeHumidity', ['measuredValue']);
@@ -443,6 +504,11 @@ module.exports = [
       const device = typeof a === 'string' ? c : a?.data?.device;
       const exposesChanged = typeof a === 'string' ? undefined : a?.data?.deviceExposesChanged;
       if (!device) return;
+      /* The custom cluster must be registered on the Device before any read of it
+       * can be parsed. Cheap and idempotent, so just do it on every event. */
+      if (typeof device.addCustomCluster === 'function') {
+        try { device.addCustomCluster(DIAG_CLUSTER, DIAG_CLUSTER_DEF); } catch (err) { /* already there */ }
+      }
       if (type === 'stop' || type === 'deviceLeave') {
         const h = globalStore.getValue(device, 'poll');
         if (h) { clearInterval(h); globalStore.clearValue(device, 'poll'); }
@@ -509,7 +575,11 @@ module.exports = [
           await read(EP.room, 'msTemperatureMeasurement', ['measuredValue']);
           await read(EP.room, 'msRelativeHumidity', ['measuredValue']);
         }
-        if (tick % DIAG_TICKS === 0) await read(EP.diag, 'genAnalogInput', ['presentValue']);
+        if (tick % DIAG_TICKS === 0) {
+          await read(EP.diag, 'genAnalogInput', ['presentValue']);
+          await read(EP.crash, 'genAnalogInput', ['presentValue']);
+          await read(EP.crash, DIAG_CLUSTER, ['summary']);
+        }
         // Colour state, for the same reason: nothing is reported, so poll it.
         if (tick % COLOUR_TICKS === 0) {
           for (const [, id] of LIGHT_EPS) {

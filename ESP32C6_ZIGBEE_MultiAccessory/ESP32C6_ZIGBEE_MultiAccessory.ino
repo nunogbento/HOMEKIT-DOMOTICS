@@ -3,6 +3,7 @@
 #include <Preferences.h>
 #include "esp_system.h"    // esp_reset_reason()
 #include "esp_ota_ops.h"   // OTA rollback: mark-valid / running-partition state
+#include "esp_core_dump.h" // post-mortem summary after a panic, read back over Zigbee
 #include <ir_LG.h>          // IRremoteESP8266 — LG split control (proven on the C6 by the HomeKit firmware)
 
 /* OTA ANTI-BRICK ROLLBACK — verifyRollbackLater() is defined below, returning
@@ -51,7 +52,9 @@
  * ENDPOINT MAP
  *   EP10..EP13  Dimmable Light, one per PWM channel (OTA client sits on EP10)
  *   EP14        Multistate Output -> output profile selector
- *   EP15        Analog Input      -> brownout/reset counter
+ *   EP15        Analog Input      -> brownout counter
+ *   EP19        Analog In + 0xFC00 -> all-cause reset count + crash summary string
+ *   EP21        Binary Output     -> crash test (config; deliberately panics)
  *   EP16        Temperature       -> C6 die temperature (diagnostic)
  *   EP18        Binary Output     -> AC ENABLED (config; IR can't be probed)
  *   EP20        Temperature + Humidity -> AM2320, ONLY IF DETECTED
@@ -287,6 +290,51 @@ ZigbeeAnalog      zbDiag(15);   // brownout counter
 ZigbeeTempSensor  zbDie(16);    // die temperature
 ZigbeeAnalog      zbMask(17);   // channel mask (which channels are populated)
 ZigbeeBinary      zbAcCfg(18);  // config: AC enabled
+
+/* EP19 — post-mortem diagnostics. These boards end up behind panels and under
+ * beds with no serial, so the only way to learn WHY one restarted is to carry it
+ * out over the mesh. The Arduino wrapper has no string-attribute class, so this
+ * subclass reaches the protected cluster list and adds a custom cluster holding
+ * one CharacterString. `description` on genAnalogInput was the cheaper option but
+ * the wrapper caps it at 32 chars, and a crash line needs ~110. */
+#define DIAG_CLUSTER_ID   0xFC00
+#define DIAG_ATTR_SUMMARY 0x0000
+#define DIAG_STR_MAX      200          // usable chars; ZCL string is [len][data]
+
+class ZigbeeCrashDiag : public ZigbeeAnalog {
+ public:
+  explicit ZigbeeCrashDiag(uint8_t ep) : ZigbeeAnalog(ep) {}
+
+  bool addSummaryCluster() {
+    _zbuf[0] = 0;                                   // ZCL string: length byte first
+    esp_zb_attribute_list_t *cl = esp_zb_zcl_attr_list_create(DIAG_CLUSTER_ID);
+    if (!cl) return false;
+    if (esp_zb_custom_cluster_add_custom_attr(cl, DIAG_ATTR_SUMMARY,
+          ESP_ZB_ZCL_ATTR_TYPE_CHAR_STRING,
+          ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, _zbuf) != ESP_OK) return false;
+    return esp_zb_cluster_list_add_custom_cluster(_cluster_list, cl,
+             ESP_ZB_ZCL_CLUSTER_SERVER_ROLE) == ESP_OK;
+  }
+
+  /* Safe to call after Zigbee.begin(): updates the live attribute value. */
+  void setSummary(const char *txt) {
+    size_t n = strlen(txt);
+    if (n > DIAG_STR_MAX) n = DIAG_STR_MAX;
+    _zbuf[0] = (char)n;
+    memcpy(_zbuf + 1, txt, n);
+    _zbuf[n + 1] = 0;
+    esp_zb_lock_acquire(portMAX_DELAY);
+    esp_zb_zcl_set_attribute_val(_endpoint, DIAG_CLUSTER_ID,
+      ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, DIAG_ATTR_SUMMARY, _zbuf, false);
+    esp_zb_lock_release();
+  }
+
+ private:
+  char _zbuf[DIAG_STR_MAX + 2];
+};
+
+ZigbeeCrashDiag   zbCrash(19);  // reset count (analog in) + crash summary (0xFC00)
+ZigbeeBinary      zbCrashTest(21);  // config: deliberately panic, to prove the chain
 ZigbeeMultistate  zbAcMode(30); // AC system mode      (created only when enabled)
 ZigbeeAnalog      zbAcTemp(31); // AC setpoint
 ZigbeeFanControl  zbAcFan(32);  // AC fan mode
@@ -786,6 +834,84 @@ static bool am2320Read(float &tempC, float &rh) {
 }
 
 /* ============================================================
+ *  POST-MORTEM DIAGNOSTICS
+ * ------------------------------------------------------------
+ *  Two complementary things, because neither covers the other:
+ *   - esp_reset_reason() + an all-cause counter catch EVERY restart, including
+ *     brownouts, which produce no core dump at all (the power is gone before
+ *     anything can be written).
+ *   - the core-dump summary catches panics and watchdogs with symbol-level
+ *     detail. On RISC-V there is no on-device backtrace (that needs DWARF), so
+ *     we ship pc + ra + mcause + mtval and symbolise them on the host with
+ *     riscv32-esp-elf-addr2line. app_elf_sha256 says WHICH build crashed, so an
+ *     old dump can never be symbolised against new firmware by mistake.
+ *  The dump is deliberately NOT erased: it stays readable across later reboots
+ *  until a new crash overwrites it.
+ * ============================================================ */
+static char     g_diagSummary[DIAG_STR_MAX + 1] = "";
+static uint32_t g_resetCount = 0;
+
+static const char *resetReasonName(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:   return "POWERON";
+    case ESP_RST_EXT:       return "EXT";
+    case ESP_RST_SW:        return "SW";          // our own ESP.restart(), e.g. a profile change
+    case ESP_RST_PANIC:     return "PANIC";
+    case ESP_RST_INT_WDT:   return "INT_WDT";
+    case ESP_RST_TASK_WDT:  return "TASK_WDT";
+    case ESP_RST_WDT:       return "WDT";
+    case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT";
+    case ESP_RST_SDIO:      return "SDIO";
+    default:                return "UNKNOWN";
+  }
+}
+
+static void buildDiagSummary(esp_reset_reason_t rr) {
+  prefs.begin("madiag", false);
+  g_resetCount = prefs.getUInt("rstcnt", 0) + 1;
+  prefs.putUInt("rstcnt", g_resetCount);
+  prefs.end();
+
+  int n = snprintf(g_diagSummary, sizeof(g_diagSummary), "rst=%s n=%lu",
+                   resetReasonName(rr), (unsigned long)g_resetCount);
+
+  if (esp_core_dump_image_check() == ESP_OK) {
+    /* ~1.1 kB (it embeds a 1 kB stack dump) — heap, not stack. */
+    esp_core_dump_summary_t *cd = (esp_core_dump_summary_t *)malloc(sizeof(*cd));
+    if (cd) {
+      if (esp_core_dump_get_summary(cd) == ESP_OK) {
+        snprintf(g_diagSummary + n, sizeof(g_diagSummary) - n,
+                 " task=%.16s pc=0x%08lX ra=0x%08lX mcause=%lu mtval=0x%08lX sha=%02x%02x%02x%02x",
+                 cd->exc_task, (unsigned long)cd->exc_pc,
+                 (unsigned long)cd->ex_info.ra, (unsigned long)cd->ex_info.mcause,
+                 (unsigned long)cd->ex_info.mtval,
+                 cd->app_elf_sha256[0], cd->app_elf_sha256[1],
+                 cd->app_elf_sha256[2], cd->app_elf_sha256[3]);
+      } else {
+        snprintf(g_diagSummary + n, sizeof(g_diagSummary) - n, " dump=unreadable");
+      }
+      free(cd);
+    } else {
+      snprintf(g_diagSummary + n, sizeof(g_diagSummary) - n, " dump=nomem");
+    }
+  } else {
+    snprintf(g_diagSummary + n, sizeof(g_diagSummary) - n, " nodump");
+  }
+  Serial.printf("DIAG %s\n", g_diagSummary);
+}
+
+/* Config switch that deliberately panics, so the whole readout chain can be
+ * proven on a board with no serial attached. Writing ON is the trigger. */
+static void onCrashTestWrite(bool on) {
+  if (!on) return;
+  Serial.println("DIAG: crash test requested — panicking in 200 ms");
+  delay(200);
+  volatile uint32_t *nowhere = (uint32_t *)0x00000000;
+  *nowhere = 0xDEADBEEF;   // store access fault -> panic -> core dump
+}
+
+/* ============================================================
  *  STATUS LED
  * ============================================================ */
 static void ledOn(bool on) {
@@ -824,6 +950,7 @@ void setup() {
   if (g_chMask < 1 || g_chMask > 0x0F) g_chMask = CHMASK_DEFAULT;   // self-heal
   esp_reset_reason_t rr = esp_reset_reason();
   if (rr == ESP_RST_BROWNOUT) { g_brownoutCount++; prefs.putUInt("bodcnt", g_brownoutCount); }
+  buildDiagSummary(rr);   // all-cause counter + core-dump post-mortem (EP19)
   prefs.end();
 
   g_profile = (Profile)g_profileStored;
@@ -942,6 +1069,18 @@ void setup() {
   zbDiag.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
   zbDiag.addAnalogInput();
   zbDiag.setAnalogInputDescription("Brownout count");
+
+  // EP19 — all-cause reset counter + the crash summary string (custom 0xFC00).
+  zbCrash.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
+  zbCrash.addAnalogInput();
+  zbCrash.setAnalogInputDescription("Reset count (all causes)");
+  if (!zbCrash.addSummaryCluster()) Serial.println("DIAG: custom cluster add FAILED");
+
+  // EP21 — deliberate panic, so the readout chain can be proven without serial.
+  zbCrashTest.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
+  zbCrashTest.addBinaryOutput();
+  zbCrashTest.setBinaryOutputDescription("Crash test (panics the board)");
+  zbCrashTest.onBinaryOutputChange(onCrashTestWrite);
   zbDie.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
   zbDie.setMinMaxValue(-40, 125);
   zbMask.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
@@ -1008,6 +1147,8 @@ void setup() {
   if (zbRgb) Zigbee.addEndpoint(zbRgb);
   Zigbee.addEndpoint(&zbCfg);
   Zigbee.addEndpoint(&zbDiag);
+  Zigbee.addEndpoint(&zbCrash);
+  Zigbee.addEndpoint(&zbCrashTest);
   Zigbee.addEndpoint(&zbDie);
   Zigbee.addEndpoint(&zbMask);
   Zigbee.addEndpoint(&zbAcCfg);
@@ -1033,6 +1174,8 @@ void setup() {
   // 9. Publish the current profile and the boot-time diagnostics.
   zbCfg.setMultistateOutput(g_profileStored);
   zbDiag.setAnalogInput((float)g_brownoutCount);
+  zbCrash.setAnalogInput((float)g_resetCount);
+  zbCrash.setSummary(g_diagSummary);
   g_maskEcho = true;
   zbMask.setAnalogOutput((float)g_chMask);
   g_acCfgEcho = true;
