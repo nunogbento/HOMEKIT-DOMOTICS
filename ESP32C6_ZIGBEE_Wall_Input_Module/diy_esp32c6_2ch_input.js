@@ -82,6 +82,63 @@ const fzBrownout = {
   },
 };
 
+/* Post-mortem, ported from the MultiAccessory converter. It arrives in the
+ * `description` (0x001C) attributes of the STANDARD analog input and output
+ * clusters on EP13 — a custom cluster was tried there first and the device never
+ * answered reads on it (esp-zigbee-sdk #278/#406/#434/#811). Two 32-char fields:
+ *   A (input)  rst=PANIC n=13 t=Zigbee_mai
+ *   B (output) pc=42000128 mc=7 s=f3a91996
+ * Joined for display, symbolised with personal-ops/tools/esp32/crashdecode.sh. */
+const fzDiagA = {
+  cluster: 'genAnalogInput',
+  type: ['attributeReport', 'readResponse'],
+  convert: (model, msg, publish, options, meta) => {
+    if (msg.endpoint.ID !== 13 || msg.data.description === undefined) return;
+    const dev = (meta && meta.device) || msg.endpoint.getDevice();
+    const a = String(msg.data.description).trim();
+    globalStore.putValue(dev, 'diagA', a);
+    const b = globalStore.getValue(dev, 'diagB') || '';
+    return {crash_summary: (a + (b ? ' ' + b : '')).trim()};
+  },
+};
+
+const fzDiagB = {
+  cluster: 'genAnalogOutput',
+  type: ['attributeReport', 'readResponse'],
+  convert: (model, msg, publish, options, meta) => {
+    if (msg.endpoint.ID !== 13 || msg.data.description === undefined) return;
+    const dev = (meta && meta.device) || msg.endpoint.getDevice();
+    const b = String(msg.data.description).trim();
+    globalStore.putValue(dev, 'diagB', b);
+    const a = globalStore.getValue(dev, 'diagA') || '';
+    return {crash_summary: ((a ? a + ' ' : '') + b).trim()};
+  },
+};
+
+const tzDiag = {
+  key: ['crash_summary'],
+  convertGet: async (entity, key, meta) => {
+    const ep = meta.device.getEndpoint(13);
+    if (!ep) return;
+    await ep.read('genAnalogInput', ['description']);
+    await ep.read('genAnalogOutput', ['description']);
+  },
+};
+
+/* Writing 13579 to EP13's analog output panics the board on purpose. The write
+ * will report a timeout because the board is mid-panic — that is expected. */
+const tzCrashTest = {
+  key: ['crash_test'],
+  convertSet: async (entity, key, value, meta) => {
+    if (String(value).toUpperCase() !== 'ON' && value !== true) return {state: {crash_test: 'OFF'}};
+    const ep = meta.device.getEndpoint(13);
+    if (ep) {
+      try { await ep.write('genAnalogOutput', {presentValue: 13579}); } catch (err) { /* expected */ }
+    }
+    return {state: {crash_test: 'OFF'}};
+  },
+};
+
 const tzMode = {
   key: ['mode_1', 'mode_2'],
   convertSet: async (entity, key, value, meta) => {
@@ -103,8 +160,8 @@ module.exports = [
     model: 'ESP32C6-2CH-INPUT',
     vendor: 'DIY',
     description: 'ESP32-C6 mains-powered 2-channel in-wall scene switch (momentary/toggle, Zigbee router)',
-    fromZigbee: [fzAction, fzMode, fzTemp, fzBrownout],
-    toZigbee: [tzMode],
+    fromZigbee: [fzAction, fzMode, fzTemp, fzBrownout, fzDiagA, fzDiagB],
+    toZigbee: [tzMode, tzDiag, tzCrashTest],
     ota: true,
     exposes: [
       e.action(ACTIONS),
@@ -115,9 +172,28 @@ module.exports = [
         .withDescription('Input 2 behaviour (see input 1)'),
       exposes.numeric('brownout_count', ea.STATE).withDescription('Brownout/unexpected resets since flash')
         .withCategory('diagnostic'),
+      exposes.text('crash_summary', ea.STATE_GET)
+        .withDescription('Last reset reason, the all-cause restart count, and — if the board ' +
+          'panicked — the faulting task, pc, mcause and the crashing build\'s ELF hash. ' +
+          'brownout_count only ever counted what the BOD classified, which is why the ' +
+          '2026-09-09 restart was unexplainable. Symbolise with tools/esp32/crashdecode.sh.')
+        .withCategory('diagnostic'),
+      exposes.binary('crash_test', ea.SET, 'ON', 'OFF')
+        .withDescription('Deliberately panic the board to prove the post-mortem path works. ' +
+          'It REBOOTS. The write will report a timeout — that is expected.')
+        .withCategory('config'),
       e.device_temperature().withDescription('MCU die temperature (diagnostic, not ambient)'),
     ],
     configure: async (device, coordinatorEndpoint) => {
+      // Post-mortem: read both description fields once, so it shows up immediately.
+      {
+        const ep13 = device.getEndpoint(13);
+        if (ep13) {
+          try { await ep13.read('genAnalogInput', ['description']); } catch (e) { /* offline */ }
+          try { await ep13.read('genAnalogOutput', ['description']); } catch (e) { /* offline */ }
+        }
+      }
+
       // Actions: bind each Multistate Input to the coordinator (manual reports go to binds).
       for (const epId of [10, 11]) {
         const ep = device.getEndpoint(epId);

@@ -2,6 +2,7 @@
 #include <Preferences.h>
 #include "esp_system.h"     // esp_reset_reason()
 #include "esp_ota_ops.h"    // OTA rollback: mark-valid / running-partition state
+#include "esp_core_dump.h"  // post-mortem summary, read back over Zigbee (no serial in the wall)
 
 /* OTA ANTI-BRICK ROLLBACK — verifyRollbackLater() is defined below (after the
  * data types), returning true so the arduino-esp32 core does NOT auto-confirm a
@@ -39,7 +40,8 @@
  * Transport:
  *   EP10/EP11 = Multistate Input (actions) + Multistate Output (mode) [+OTA on EP10]
  *   EP12      = Temperature (msTemperatureMeasurement)  -> device_temperature
- *   EP13      = Analog Input (genAnalogInput)          -> brownout_count
+ *   EP13      = Analog In + Out (genAnalogInput/Output) -> brownout_count; the two
+ *               descriptions carry the reset reason/count and the crash post-mortem
  *   Action presentValue codes: 1 single, 2 double, 3 long, 4 toggle, 5 on, 6 off.
  *   Mode  presentValue codes (Multistate Output): 0 momentary, 1 toggle,
  *                                                  2 toggle_directional, 3 toggle_scenes.
@@ -228,6 +230,93 @@ extern "C" bool verifyRollbackLater() {
   return true;
 }
 
+/* ============================================================
+ *  POST-MORTEM DIAGNOSTICS  (ported from the MultiAccessory firmware)
+ * ------------------------------------------------------------
+ *  These boards are behind faceplates with no serial, so the only way to learn
+ *  why one restarted is to carry it out over the mesh. brownout_count alone was
+ *  never enough: it only increments on ESP_RST_BROWNOUT, so the unexplained
+ *  restart board 2 announced on 2026-09-09 looked identical to nothing at all.
+ *
+ *  Two mechanisms: esp_reset_reason() + an all-cause counter catch EVERY restart
+ *  (a brownout writes no dump — the power is gone first), while the core-dump
+ *  summary catches panics and watchdogs with symbol-level detail.
+ *
+ *  Transport is the `description` attribute of the STANDARD analog in/out
+ *  clusters on the EXISTING EP13 — a custom cluster was tried on the other board
+ *  and the stack never answered reads on it (esp-zigbee-sdk #278/#406/#434/#811).
+ *  Both fields are written ONCE, before Zigbee.begin(): ZBOSS keeps our pointer
+ *  and copies len+1 bytes, so a string that grows after registration corrupts its
+ *  buffer pool (it asserted in zb_bufpool_mult.c on every interview).
+ *
+ *  Decode with personal-ops/tools/esp32/crashdecode.sh against the matching ELF —
+ *  the `s=` field is the crashing build's hash, so the wrong ELF is refused.
+ * ============================================================ */
+#define DIAG_FIELD_MAX 32          // ZB_MAX_NAME_LENGTH in the Arduino wrapper
+#define DIAG_CRASH_MAGIC 13579.0f  // written to EP13's analog output to panic on purpose
+
+static char     g_diagA[DIAG_FIELD_MAX + 1] = "";
+static char     g_diagB[DIAG_FIELD_MAX + 1] = "";
+static uint32_t g_resetCount = 0;
+
+static const char *resetReasonName(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:   return "POWERON";
+    case ESP_RST_EXT:       return "EXT";
+    case ESP_RST_SW:        return "SW";
+    case ESP_RST_PANIC:     return "PANIC";
+    case ESP_RST_INT_WDT:   return "INT_WDT";
+    case ESP_RST_TASK_WDT:  return "TASK_WDT";
+    case ESP_RST_WDT:       return "WDT";
+    case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT";
+    case ESP_RST_SDIO:      return "SDIO";
+    default:                return "UNKNOWN";
+  }
+}
+
+static void buildDiagSummary(esp_reset_reason_t rr) {
+  prefs.begin("walldiag", false);
+  g_resetCount = prefs.getUInt("rstcnt", 0) + 1;
+  prefs.putUInt("rstcnt", g_resetCount);
+  prefs.end();
+
+  snprintf(g_diagA, sizeof(g_diagA), "rst=%s n=%lu",
+           resetReasonName(rr), (unsigned long)g_resetCount);
+  snprintf(g_diagB, sizeof(g_diagB), "nodump");
+
+  if (esp_core_dump_image_check() == ESP_OK) {
+    esp_core_dump_summary_t *cd = (esp_core_dump_summary_t *)malloc(sizeof(*cd));
+    if (cd) {
+      if (esp_core_dump_get_summary(cd) == ESP_OK) {
+        snprintf(g_diagA, sizeof(g_diagA), "rst=%s n=%lu t=%.10s",
+                 resetReasonName(rr), (unsigned long)g_resetCount, cd->exc_task);
+        /* app_elf_sha256 is an ASCII STRING, not raw bytes — %02x on it prints the
+         * hex of the characters, which looks plausible and is wrong. */
+        snprintf(g_diagB, sizeof(g_diagB), "pc=%08lX mc=%lu s=%.8s",
+                 (unsigned long)cd->exc_pc, (unsigned long)cd->ex_info.mcause,
+                 (const char *)cd->app_elf_sha256);
+      } else {
+        snprintf(g_diagB, sizeof(g_diagB), "dump=unreadable");
+      }
+      free(cd);
+    } else {
+      snprintf(g_diagB, sizeof(g_diagB), "dump=nomem");
+    }
+  }
+  Serial.printf("DIAG %s | %s\n", g_diagA, g_diagB);
+}
+
+/* Deliberate panic, guarded by a magic value so a stray write cannot reboot a
+ * board that is screwed into a wall. */
+static void onDiagCrashWrite(float value) {
+  if (value != DIAG_CRASH_MAGIC) return;
+  Serial.println("DIAG: crash test requested — panicking in 200 ms");
+  delay(200);
+  volatile uint32_t *nowhere = (uint32_t *)0x00000000;
+  *nowhere = 0xDEADBEEF;
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -253,6 +342,7 @@ void setup() {
   prefs.end();
   Serial.printf("Boot: reset_reason=%d, brownout_count=%u, modes=%u/%u\n",
                 (int)rr, g_brownoutCount, buttons[0].mode, buttons[1].mode);
+  buildDiagSummary(rr);   // all-cause counter + core-dump post-mortem (EP13)
 
 #ifdef HAS_RF_SWITCH
   prefs.begin("zigbee-cfg", false);
@@ -278,7 +368,12 @@ void setup() {
   zbTemp.setMinMaxValue(-40, 125);
   zbDiag.setManufacturerAndModel("DIY", "ESP32C6-2CH-INPUT");
   zbDiag.addAnalogInput();
-  zbDiag.setAnalogInputDescription("Brownout count");
+  /* The two description fields ARE the post-mortem transport — see the block
+   * comment above. Written once, here, and never touched again. */
+  zbDiag.setAnalogInputDescription(g_diagA);
+  zbDiag.addAnalogOutput();                  // carries g_diagB, and the crash trigger
+  zbDiag.setAnalogOutputDescription(g_diagB);
+  zbDiag.onAnalogOutputChange(onDiagCrashWrite);
 
   // OTA client on EP10
   zbBtn1.addOTAClient(OTA_FW_RUNNING, OTA_FW_DOWNLOADED, OTA_HW_VERSION,
