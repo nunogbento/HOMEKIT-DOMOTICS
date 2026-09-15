@@ -233,10 +233,12 @@ extern "C" bool verifyRollbackLater() {
 /* ============================================================
  *  POST-MORTEM DIAGNOSTICS  (ported from the MultiAccessory firmware)
  * ------------------------------------------------------------
- *  These boards are behind faceplates with no serial, so the only way to learn
- *  why one restarted is to carry it out over the mesh. brownout_count alone was
- *  never enough: it only increments on ESP_RST_BROWNOUT, so the unexplained
- *  restart board 2 announced on 2026-09-09 looked identical to nothing at all.
+ *  Both prototype boards are assembled with no serial connection attached, and
+ *  re-soldering one is not something to do casually — so the practical way to
+ *  learn why a board restarted is to carry it out over the mesh. brownout_count
+ *  alone was never enough: it only increments on ESP_RST_BROWNOUT, so the
+ *  unexplained restart board 2 announced on 2026-09-09 looked identical to
+ *  nothing having happened at all.
  *
  *  Two mechanisms: esp_reset_reason() + an all-cause counter catch EVERY restart
  *  (a brownout writes no dump — the power is gone first), while the core-dump
@@ -308,7 +310,7 @@ static void buildDiagSummary(esp_reset_reason_t rr) {
 }
 
 /* Deliberate panic, guarded by a magic value so a stray write cannot reboot a
- * board that is screwed into a wall. */
+ * board that is in service. */
 static void onDiagCrashWrite(float value) {
   if (value != DIAG_CRASH_MAGIC) return;
   Serial.println("DIAG: crash test requested — panicking in 200 ms");
