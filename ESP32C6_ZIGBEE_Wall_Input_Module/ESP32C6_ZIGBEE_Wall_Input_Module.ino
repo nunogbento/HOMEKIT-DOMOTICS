@@ -111,8 +111,8 @@
 /* --- OTA (Zigbee firmware update over the mesh) --- */
 // Version is 0xMMmmpprr — this build is v1.0.0.7 (v8: device_temperature via POLL,
 // no stack reporting — the reporting send path faults this zboss build).
-#define OTA_FW_RUNNING     0x01000008
-#define OTA_FW_DOWNLOADED  0x01000009
+#define OTA_FW_RUNNING     0x01000009
+#define OTA_FW_DOWNLOADED  0x0100000A
 #define OTA_HW_VERSION     0x0101
 #define OTA_MANUFACTURER   0x1001
 #define OTA_IMAGE_TYPE     0x1011
@@ -395,6 +395,24 @@ void setup() {
   // Instead the loop just keeps the msTemperatureMeasurement attribute fresh via
   // setTemperature(); Z2M POLLS it with periodic reads (the read-response path is
   // the one that works here). See the converter's onEvent poller.
+  //
+  // ...but NOT creating reporting is not the same as not HAVING it. A config
+  // written by an older firmware (or any coordinator) persists in the device's own
+  // NVS and keeps firing forever, straight into the faulting send path. That is
+  // exactly what happened to in-wall board 2 on 2026-09-16: a leftover
+  // msTemperatureMeasurement report on EP12 with max=300 panicked it every 301 s,
+  // which made every OTA die partway and looked for hours like a power fault. The
+  // running firmware could not even clear it remotely — it rejects ConfigureReporting
+  // with Status FAILURE, so the only remote fix was making the device leave the
+  // network and re-pair.
+  // So wipe the reporting table at every boot. It clears whatever is stored without
+  // touching network membership, bindings, or identity — no re-pair, no window off
+  // the mesh. Safe here because button actions use MANUAL reportMultistateInput()
+  // calls, which need a binding, not a reporting config.
+  esp_zb_lock_acquire(portMAX_DELAY);
+  esp_zb_zcl_reset_all_reporting_info();
+  esp_zb_lock_release();
+  Serial.println("Reporting table cleared (stale configs crash this zboss build)");
 
   // Reflect the persisted modes back to Z2M so the profile shows the current value.
   zbBtn1.setMultistateOutput(buttons[0].mode);
