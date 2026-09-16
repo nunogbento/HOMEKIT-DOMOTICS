@@ -8,6 +8,7 @@
     "manufacturerCode": 4097,
     "sha512": "128e087cc8f2d70f3b283eebcf20e3004d057fc635935574d50b7ac87e6058abc8346cd817a65a22845aecc0891aeb991cd0765408e1d2ca4fe3cdd39eb1dba6",
     "otaHeaderString": "ESP32C6-2CH-INPUT",
-    "modelId": "ESP32C6-2CH-INPUT"
+    "modelId": "ESP32C6-2CH-INPUT",
+    "elfSha256": "0c16c689257e3882e818a7f8d62e40ea8b7434504115608d090ebfb588682b79"
   }
 ]

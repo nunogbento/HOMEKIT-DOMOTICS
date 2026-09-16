@@ -64,7 +64,17 @@ The index `url` is **relative to the data dir** (`ota_override/…`), which is w
      --version 0x01000008 --out-dir ota --index ota/index.json
    ```
    This writes `ota/ESP32C6-2CH-INPUT_v0x01000008.ota` + updates `ota/index.json`.
-3. Deploy both to the Pi (the repo `ota/` mirrors `data/ota_override/`):
+   It also archives the matching **`.elf`** next to the `.ota`. **Do not skip this
+   and do not delete old ELFs.** A crash summary reported over Zigbee carries only
+   `pc` plus the first 8 chars of the crashing build's ELF sha256; without that
+   exact ELF the address cannot be symbolised, and symbolising against a different
+   build gives a confidently wrong answer rather than no answer. Learned the hard
+   way on 2026-09-16: board 2 panicked repeatedly on v7, the post-mortem survived
+   the upgrade and reported `pc=0x420337B2 s=9f26d046`, and the v7 ELF had already
+   been overwritten by a later build — so that address can never be resolved.
+
+3. Deploy both to the Pi (the repo `ota/` mirrors `data/ota_override/`). The `.elf`
+   stays in the repo; it is not needed on the Pi:
    ```
    scp ota/ESP32C6-2CH-INPUT_v0x01000008.ota ota/index.json \
      pi@192.168.1.109:/home/pi/zigbee2mqtt/data/ota_override/

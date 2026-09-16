@@ -64,6 +64,7 @@ def main():
     ap.add_argument("--header-string", default="ESP32C6-2CH-INPUT")
     ap.add_argument("--model-id", default="ESP32C6-2CH-INPUT")
     ap.add_argument("--index", default="index.json")
+    ap.add_argument("--elf", default=None, help="the matching .elf; archived next to the .ota so a crash post-mortem from this build can still be symbolised later. Defaults to <bin without .bin>.elf if that exists.")
     ap.add_argument("--url-base", default="ota_override", help="dir (relative to the Z2M data dir) that holds the .ota; used to build the index 'url'. The deployed setup uses 'ota_override' (matches zigbee_ota_override_index_location).")
     a = ap.parse_args()
 
@@ -80,6 +81,28 @@ def main():
     open(fpath, "wb").write(ota)
     sha = hashlib.sha512(ota).hexdigest()
 
+    # ---- archive the ELF -------------------------------------------------
+    # A crash summary reported over Zigbee carries `pc` and the first 8 chars of
+    # the CRASHING build's ELF sha256. Without that exact ELF the address cannot
+    # be symbolised -- and symbolising against a different build silently gives a
+    # confidently wrong answer. Learned the hard way: v7 panicked in the field,
+    # the post-mortem survived, and the v7 ELF had already been overwritten by the
+    # next build, so pc=0x420337B2 can never be resolved. Keep every release's ELF.
+    elf_src = a.elf
+    if elf_src is None:
+        guess = a.bin[:-4] + ".elf" if a.bin.endswith(".bin") else a.bin + ".elf"
+        elf_src = guess if os.path.exists(guess) else None
+    if elf_src and os.path.exists(elf_src):
+        elf_dst = os.path.join(a.out_dir, f"{a.model_id}_v0x{version:08x}.elf")
+        with open(elf_src, "rb") as f: elf_bytes = f.read()
+        open(elf_dst, "wb").write(elf_bytes)
+        elf_sha = hashlib.sha256(elf_bytes).hexdigest()
+        print(f"ELF  : {elf_dst}  (sha256 {elf_sha[:8]}… — this is the `s=` field in a crash summary)")
+    else:
+        elf_sha = None
+        print("WARNING: no .elf archived — a crash post-mortem from this build will NOT be symbolisable.",
+              file=sys.stderr)
+
     entry = {
         "fileName": fname,
         "fileVersion": version,
@@ -91,6 +114,9 @@ def main():
         "otaHeaderString": a.header_string,
         "modelId": a.model_id,
     }
+    if elf_sha:
+        # not used by Z2M; recorded so a crash summary's `s=` can be matched to a release
+        entry["elfSha256"] = elf_sha
     # keep a single current entry per (manufacturerCode, imageType)
     idx = []
     if os.path.exists(a.index):
