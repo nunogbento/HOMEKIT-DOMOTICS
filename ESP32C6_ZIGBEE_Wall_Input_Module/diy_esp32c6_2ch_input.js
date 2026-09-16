@@ -19,6 +19,13 @@ const ea = exposes.access;
 // ConfigureReporting null-deref the stack's zb_zcl_send_report_attr_command). The
 // firmware keeps the attribute fresh with setTemperature(); we read it on a timer.
 const TEMP_POLL_MS = 5 * 60 * 1000;
+/* Diagnostics were previously read ONLY at interview, which is how brownout_count
+ * sat at a ten-day-old "1" in Z2M while the device itself held 9 — and that stale
+ * value is most of why board 2's crashes looked like brownouts for hours. Poll them
+ * on a slow multiple of the temperature tick so they stay live. reset_count lives
+ * inside crash_summary, which makes it a real stability instrument: if n climbs, the
+ * board is restarting, no matter how quiet the Z2M log is. */
+const DIAG_EVERY_N_TICKS = 6;   // 6 x 5 min = every 30 min
 
 const GESTURE = {1: 'single', 2: 'double', 3: 'hold', 4: 'toggle', 5: 'on', 6: 'off'};
 const MODES = ['momentary', 'toggle', 'toggle_directional', 'toggle_scenes'];
@@ -236,8 +243,18 @@ module.exports = [
       if (globalStore.hasValue(device, 'temp_poll')) return;
       const ep = device.getEndpoint(12);
       if (!ep) return;
+      let tick = 0;
       const h = setInterval(async () => {
+        tick++;
         try { await ep.read('msTemperatureMeasurement', ['measuredValue']); } catch (e) { /* device asleep/offline */ }
+        if (tick % DIAG_EVERY_N_TICKS === 0) {
+          const d13 = device.getEndpoint(13);
+          if (d13) {
+            try { await d13.read('genAnalogInput', ['presentValue']); } catch (e) {}
+            try { await d13.read('genAnalogInput', ['description']); } catch (e) {}
+            try { await d13.read('genAnalogOutput', ['description']); } catch (e) {}
+          }
+        }
       }, TEMP_POLL_MS);
       globalStore.putValue(device, 'temp_poll', h);
     },
