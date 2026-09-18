@@ -111,8 +111,8 @@
 /* --- OTA (Zigbee firmware update over the mesh) --- */
 // Version is 0xMMmmpprr — this build is v1.0.0.7 (v8: device_temperature via POLL,
 // no stack reporting — the reporting send path faults this zboss build).
-#define OTA_FW_RUNNING     0x01000009
-#define OTA_FW_DOWNLOADED  0x0100000A
+#define OTA_FW_RUNNING     0x0100000A
+#define OTA_FW_DOWNLOADED  0x0100000B
 #define OTA_HW_VERSION     0x0101
 #define OTA_MANUFACTURER   0x1001
 #define OTA_IMAGE_TYPE     0x1011
@@ -405,14 +405,37 @@ void setup() {
   // running firmware could not even clear it remotely — it rejects ConfigureReporting
   // with Status FAILURE, so the only remote fix was making the device leave the
   // network and re-pair.
-  // So wipe the reporting table at every boot. It clears whatever is stored without
-  // touching network membership, bindings, or identity — no re-pair, no window off
-  // the mesh. Safe here because button actions use MANUAL reportMultistateInput()
-  // calls, which need a binding, not a reporting config.
-  esp_zb_lock_acquire(portMAX_DELAY);
-  esp_zb_zcl_reset_all_reporting_info();
-  esp_zb_lock_release();
-  Serial.println("Reporting table cleared (stale configs crash this zboss build)");
+  // v9 tried to fix this by wiping the WHOLE reporting table at boot
+  // (esp_zb_zcl_reset_all_reporting_info). Bench test on board 3, 2026-09-18: that
+  // build aborted (panic_abort from loopTask, mcause=2) on EVERY button press —
+  // the manual reportMultistateInput() path needs the attribute's reporting entry
+  // to exist (that is the esp_zigbee_zcl_command.c:263 assert; temperature hit it
+  // because its entry never had one). v9 never shipped to a wall unit.
+  //
+  // v10: leave the table alone (v8 semantics, proven for weeks on boards 1+2) and
+  // neutralise ONLY the EP12 msTemperatureMeasurement entry: max_interval 0xFFFF
+  // = "never report periodically" per ZCL, and a delta no die temperature can
+  // reach, so the change path stays quiet too. This overwrites a stale entry left
+  // by an older firmware or a coordinator without touching anything else.
+  {
+    esp_zb_zcl_reporting_info_t ri = {};
+    ri.direction    = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV;
+    ri.ep           = 12;
+    ri.cluster_id   = ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT;
+    ri.cluster_role = ESP_ZB_ZCL_CLUSTER_SERVER_ROLE;
+    ri.attr_id      = ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID;
+    ri.manuf_code   = ESP_ZB_ZCL_ATTR_NON_MANUFACTURER_SPECIFIC;
+    ri.dst.profile_id = ESP_ZB_AF_HA_PROFILE_ID;
+    ri.u.send_info.min_interval     = 0xFFFF;
+    ri.u.send_info.max_interval     = 0xFFFF;   // ZCL: no periodic reports
+    ri.u.send_info.def_min_interval = 0xFFFF;
+    ri.u.send_info.def_max_interval = 0xFFFF;
+    ri.u.send_info.delta.s16        = 0x7FFF;   // change path never triggers
+    esp_zb_lock_acquire(portMAX_DELAY);
+    esp_err_t r = esp_zb_zcl_update_reporting_info(&ri);
+    esp_zb_lock_release();
+    Serial.printf("EP12 temperature reporting disabled: %s\n", esp_err_to_name(r));
+  }
 
   // Reflect the persisted modes back to Z2M so the profile shows the current value.
   zbBtn1.setMultistateOutput(buttons[0].mode);
