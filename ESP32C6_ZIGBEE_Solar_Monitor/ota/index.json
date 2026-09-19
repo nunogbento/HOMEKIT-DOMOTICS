@@ -1,0 +1,14 @@
+[
+  {
+    "fileName": "ESP32C6-SOLAR-MON_v0x01000001.ota",
+    "fileVersion": 16777217,
+    "fileSize": 778366,
+    "url": "ota_override/ESP32C6-SOLAR-MON_v0x01000001.ota",
+    "imageType": 4114,
+    "manufacturerCode": 4097,
+    "sha512": "c0ec4db1ba4ae4720ac9b0ee279d632291c80daba866c09367d58ce6132ddc094714327241fda7e160dffdb3150dc15f5d39aacb83cb7be6bd79a99b3fe405fa",
+    "otaHeaderString": "ESP32C6-SOLAR-MON",
+    "modelId": "ESP32C6-SOLAR-MON",
+    "elfSha256": "a1f59b362c49a10563500a15e2e6fdd86b4a15ca4d635b2baed0f3144a6c0df2"
+  }
+]
